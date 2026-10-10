@@ -1,0 +1,16 @@
+# METEOR-M2 4  TLE epoch 2026-10-10
+Sun 10/11  3:52 AM to 4:03 AM  peak 3:58 AM at 59°  (10 min)  GREAT
+Sun 10/11  3:13 PM to 3:24 PM  peak 3:19 PM at 89°  (11 min)  GREAT
+Mon 10/12  3:31 AM to 3:41 AM  peak 3:36 AM at 37°  (10 min)  good
+Mon 10/12  2:52 PM to 3:02 PM  peak 2:57 PM at 57°  (10 min)  GREAT
+Tue 10/13  4:49 AM to 4:59 AM  peak 4:54 AM at 42°  (10 min)  good
+Tue 10/13  2:31 PM to 2:40 PM  peak 2:35 PM at 36°  (10 min)  good
+Wed 10/14  4:27 AM to 4:38 AM  peak 4:33 AM at 67°  (11 min)  GREAT
+Wed 10/14  3:49 PM to 3:59 PM  peak 3:54 PM at 44°  (10 min)  good
+Thu 10/15  4:06 AM to 4:16 AM  peak 4:11 AM at 79°  (11 min)  GREAT
+Thu 10/15  3:27 PM to 3:37 PM  peak 3:32 PM at 70°  (11 min)  GREAT
+Fri 10/16  3:44 AM to 3:55 AM  peak 3:49 AM at 49°  (10 min)  good
+Fri 10/16  3:05 PM to 3:16 PM  peak 3:10 PM at 75°  (11 min)  GREAT
+Sat 10/17  3:23 AM to 3:32 AM  peak 3:28 AM at 31°  (9 min)  good
+Sat 10/17  5:03 AM to 5:12 AM  peak 5:08 AM at 32°  (9 min)  good
+Sat 10/17  2:44 PM to 2:54 PM  peak 2:49 PM at 48°  (10 min)  good

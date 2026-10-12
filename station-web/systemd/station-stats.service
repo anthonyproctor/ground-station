@@ -1,0 +1,19 @@
+[Unit]
+Description=Ground Station minute stats (writes /run/station-web/station.json)
+After=readsb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/station-web/station-stats.py
+RuntimeDirectory=station-web
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+StateDirectory=station-web
+Nice=15
+IOSchedulingClass=idle
+MemoryMax=80M
+ProtectSystem=strict
+ReadWritePaths=/run/station-web /var/lib/station-web
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes

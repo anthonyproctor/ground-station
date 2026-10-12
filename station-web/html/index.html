@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<meta name="robots" content="noindex">
+<title>Ground Station</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%2338bdf8' d='M16 2l3 10 10 4-10 4-3 10-3-10-10-4 10-4z'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#0b0f14;--card:#121821;--line:#1f2a37;--fg:#e6edf3;--dim:#8b98a8;--acc:#38bdf8;--ok:#22c55e;--warn:#f59e0b}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
+main{max-width:760px;margin:0 auto;padding:20px 16px calc(24px + env(safe-area-inset-bottom))}
+header{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+h1{font-size:1.6rem;margin:0;letter-spacing:.01em}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--dim);flex:none;transition:background .3s}
+.dot.live{background:var(--ok);box-shadow:0 0 0 0 rgba(34,197,94,.6);animation:pulse 2s infinite}
+.dot.stale{background:var(--warn)}
+@keyframes pulse{70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+.sub{color:var(--dim);margin:0 0 18px;font-size:.95rem}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+.tile .k{color:var(--dim);font-size:.8rem;text-transform:uppercase;letter-spacing:.06em}
+.tile .v{font-size:2rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.15;margin-top:4px;overflow-wrap:anywhere}
+.tile .v small{font-size:.9rem;font-weight:500;color:var(--dim)}
+.tile .n{color:var(--dim);font-size:.85rem;margin-top:2px;min-height:1.2em}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:64px;border-radius:14px;font-size:1.15rem;font-weight:700;text-decoration:none;color:#04121c;background:var(--acc)}
+.btn.alt{background:var(--card);color:var(--fg);border:1px solid var(--line)}
+.btn:active{transform:scale(.98)}
+.btn:focus-visible{outline:3px solid #fff;outline-offset:2px}
+h2{font-size:1rem;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin:22px 0 8px}
+ul.best{list-style:none;margin:0;padding:0;background:var(--card);border:1px solid var(--line);border-radius:14px}
+ul.best li{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}
+ul.best li:first-child{border-top:0}
+ul.best span:first-child{color:var(--dim);white-space:nowrap}
+ul.best span:last-child{text-align:right;font-weight:600}
+.wx{margin:-8px 0 16px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:14px;font-size:.95rem}
+.wx b{font-weight:600}.wx .cat{display:inline-block;padding:1px 7px;border-radius:6px;font-size:.75rem;font-weight:700;margin-left:4px;color:#04121c;background:var(--ok)}
+.wx .cat.MVFR{background:#60a5fa}.wx .cat.IFR{background:#f87171}.wx .cat.LIFR{background:#e879f9}
+footer{color:var(--dim);font-size:.8rem;margin-top:22px;display:flex;flex-wrap:wrap;gap:6px 14px}
+@media (min-width:640px){.grid{grid-template-columns:repeat(4,1fr)}.tile .v{font-size:1.8rem}}
+</style>
+</head>
+<body>
+<main>
+<header><span class="dot" id="dot" aria-hidden="true"></span><h1>Ground Station</h1></header>
+<p class="sub">Live aircraft heard over the Denver area by a radio on a Raspberry Pi.</p>
+<p class="wx" id="wx" hidden></p>
+
+<section class="grid" aria-label="Live numbers">
+  <div class="tile"><div class="k">Planes now</div><div class="v" id="now">–</div><div class="n" id="nowpos">&nbsp;</div></div>
+  <div class="tile"><div class="k">Messages/sec</div><div class="v" id="mps">–</div><div class="n">radio packets decoded</div></div>
+  <div class="tile"><div class="k">Highest now</div><div class="v" id="hialt">–</div><div class="n" id="hics">&nbsp;</div></div>
+  <div class="tile"><div class="k">Max range today</div><div class="v" id="range">–</div><div class="n" id="rangen">&nbsp;</div></div>
+</section>
+
+<nav class="btns">
+  <a class="btn" href="map/">Live map</a>
+  <a class="btn alt" href="graphs1090/">Graphs</a>
+</nav>
+
+<h2>Best of today</h2>
+<ul class="best">
+  <li><span>Planes seen today</span><span id="seen">–</span></li>
+  <li><span>Busiest airline</span><span id="airline">–</span></li>
+  <li><span>Rarest type</span><span id="rare">–</span></li>
+  <li><span>Highest today</span><span id="hitoday">–</span></li>
+  <li><span>Military</span><span id="mil">–</span></li>
+</ul>
+
+<footer><span id="temp"></span><span id="up"></span><span id="upd"></span></footer>
+</main>
+<script>
+(function(){
+  var $=function(id){return document.getElementById(id)};
+  var fmt=function(n){return n.toLocaleString('en-US')};
+  var last=null;
+  function ac(){
+    fetch('map/data/aircraft.json',{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
+      var list=(d.aircraft||[]).filter(function(a){return a.seen<60});
+      var pos=list.filter(function(a){return a.lat!=null&&a.seen_pos<60}).length;
+      $('now').textContent=fmt(list.length);
+      $('nowpos').textContent=pos+' on the map';
+      if(last&&d.now>last.now){
+        $('mps').textContent=fmt(Math.round((d.messages-last.messages)/(d.now-last.now)));
+      }
+      last={now:d.now,messages:d.messages};
+      var hi=null;
+      list.forEach(function(a){if(typeof a.alt_baro==='number'&&a.seen<30&&(!hi||a.alt_baro>hi.alt_baro))hi=a});
+      if(hi){$('hialt').innerHTML=fmt(hi.alt_baro)+' <small>ft</small>';$('hics').textContent=(hi.flight||'').trim()||hi.hex.toUpperCase()}
+      else{$('hialt').textContent='–';$('hics').textContent='nothing airborne'}
+      var dot=$('dot');dot.className='dot '+((Date.now()/1000-d.now)<15?'live':'stale');
+    }).catch(function(){$('dot').className='dot stale'});
+  }
+  function st(){
+    fetch('station-data/station.json',{cache:'no-store'}).then(function(r){return r.json()}).then(function(s){
+      $('seen').textContent=fmt(s.seen_today);
+      $('airline').textContent=s.top_airline?(s.top_airline.name+' ('+s.top_airline.count+')'):'–';
+      $('rare').textContent=s.rarest_type?(s.rarest_type.name+' ('+fmt(s.rarest_type.worldwide)+' in the world)'):'–';
+      $('hitoday').textContent=s.highest_today?(fmt(s.highest_today.alt_ft)+' ft, '+s.highest_today.callsign):'–';
+      $('mil').textContent=s.military_today?fmt(s.military_today):'none yet';
+      if(s.max_range_mi){$('range').innerHTML=fmt(s.max_range_mi)+' <small>mi</small>';$('rangen').textContent='farthest plane heard'}
+      else{$('range').textContent='–';$('rangen').textContent='not measured yet'}
+      wx(s.weather);
+      var p=s.pi||{};
+      if(p.temp_c!=null)$('temp').textContent='Pi '+Math.round(p.temp_c*9/5+32)+'°F / '+Math.round(p.temp_c)+'°C';
+      if(p.uptime_s!=null){var h=Math.floor(p.uptime_s/3600),dd=Math.floor(h/24);$('up').textContent='up '+(dd?dd+'d ':'')+(h%24)+'h'}
+      $('upd').textContent='today’s stats updated '+new Date(s.updated*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+    }).catch(function(){});
+  }
+  function wx(w){
+    var el=$('wx');
+    if(!w||w.temp_c==null){el.hidden=true;return}
+    var dirs=['N','NE','E','SE','S','SW','W','NW'];
+    var wind=!w.wind_kt?'calm':((typeof w.wind_dir==='number'?dirs[Math.round(w.wind_dir/45)%8]+' ':'variable ')+Math.round(w.wind_kt*1.15078)+' mph'+(w.gust_kt?', gusts '+Math.round(w.gust_kt*1.15078):''));
+    var sky={SKC:'clear',CLR:'clear',CAVOK:'clear',FEW:'a few clouds',SCT:'scattered clouds',BKN:'mostly cloudy',OVC:'overcast',OVX:'sky obscured'}[w.cover]||'';
+    var t=w.obs_time?new Date(w.obs_time*1000).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}):'';
+    el.textContent='';
+    var b=document.createElement('b');b.textContent='Denver weather ';el.appendChild(b);
+    el.appendChild(document.createTextNode(Math.round(w.temp_c*9/5+32)+'\u00b0F, wind '+wind+(sky?', '+sky:'')+(w.wx?', '+w.wx:'')));
+    if(w.flt_cat){var c=document.createElement('span');c.className='cat '+w.flt_cat;c.textContent=w.flt_cat;c.title='flying conditions';el.appendChild(c)}
+    var sm=document.createElement('div');sm.style.cssText='color:var(--dim);font-size:.8rem;margin-top:2px';
+    sm.textContent='DIA (KDEN) report'+(t?' at '+t:'')+' \u00b7 aviationweather.gov';el.appendChild(sm);
+    el.title=w.raw||'';el.hidden=false;
+  }
+  fetch('map/data/stats.json',{cache:'no-store'}).then(function(r){return r.json()}).then(function(s){
+    var m=s.last1min&&s.last1min.messages_valid;if(m!=null&&$('mps').textContent==='\u2013')$('mps').textContent=fmt(Math.round(m/60));
+  }).catch(function(){});
+  ac();st();
+  setInterval(function(){if(!document.hidden)ac()},5000);
+  setInterval(function(){if(!document.hidden)st()},60000);
+  document.addEventListener('visibilitychange',function(){if(!document.hidden){ac();st()}});
+})();
+</script>
+</body>
+</html>

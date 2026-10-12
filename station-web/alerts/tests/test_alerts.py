@@ -24,9 +24,16 @@ class FakeDb:
         "ae0001": ("05-0001", "C17", True),
         "a00003": ("N9FX", "B764", False),
         "a00004": ("N500XX", "GLF6", False),
+        "a00020": ("N572UP", "B744", False),
+        "a00022": ("N573UP", "B744", False),
+        "a00023": ("N574UP", "B744", False),
+        "a00024": ("N575UP", "B744", False),
+        "a00025": ("N135HX", "EC35", False),
     }
-    COUNTS = {"C17": 280, "B764": 18, "GLF6": 600, "B738": 7000}
-    NAMES = {"B764": "BOEING 767-400", "C17": "BOEING C-17 Globemaster 3"}
+    COUNTS = {"C17": 280, "B764": 18, "GLF6": 600, "B738": 7000, "B744": 400, "EC35": 1200}
+    DESC = {"EC35": "H2T", "B744": "L4J", "B738": "L2J", "C17": "L4J"}
+    OPS = {"UPS": "United Parcel Service"}
+    NAMES = {"B764": "BOEING 767-400", "B744": "BOEING 747-400", "C17": "BOEING C-17 Globemaster 3"}
 
     def maybe_refresh(self):
         pass
@@ -39,6 +46,12 @@ class FakeDb:
 
     def type_name(self, t):
         return self.NAMES.get(t, t)
+
+    def desc(self, t):
+        return self.DESC.get(t, "")
+
+    def operator(self, cs):
+        return self.OPS.get(cs[:3], "")
 
 
 class Capture(sa.Notifier):
@@ -275,6 +288,75 @@ class TestNotifier(Base):
         e2 = self.engine()
         out, _ = e2.step(fx("military.json"), T0 + 60)
         self.assertFalse([a for a in out if a["kind"] == "military"])
+
+
+DAY = T0            # 2027-01-15 08:00 UTC = mid-morning at the fake home (20 E)
+NIGHT = T0 + 12 * 3600
+
+
+class TestLookup(Base):
+    def lookups(self, out):
+        return {a["hex"]: a for a in out if a["kind"] == "lookup"}
+
+    def test_sun_elevation_sane(self):
+        self.assertGreater(sa.sun_elevation(10.0, 20.0, DAY), 20)
+        self.assertLess(sa.sun_elevation(10.0, 20.0, NIGHT), -6)
+        # Denver solar noon in June: high sun; midnight: far below
+        self.assertGreater(sa.sun_elevation(39.74, -104.99, 1781719200), 65)  # 2026-06-17 18:00Z
+        self.assertLess(sa.sun_elevation(39.74, -104.99, 1781762400), -20)    # 2026-06-18 06:00Z
+
+    def test_inbound_heavy_in_daylight_fires_with_direction_and_eta(self):
+        out, _ = self.engine().step(fx("lookup.json"), DAY)
+        lk = self.lookups(out)
+        self.assertEqual(sorted(lk), ["a00020", "a00025"])  # heavy + helicopter only
+        h = lk["a00020"]
+        self.assertTrue(h["private"])
+        self.assertEqual(h["look"], "SW")
+        self.assertEqual(h["elev_deg"], 12)          # atan(4000 ft / 3 nmi)
+        self.assertAlmostEqual(h["eta_min"], 1.0, delta=0.1)  # 3 nmi at 180 kt
+        self.assertIn("Look SW, about 12\u00b0 up: BOEING 747-400 (UPS123, United Parcel Service)", h["title"])
+        self.assertIn("closest in about 1 min", h["detail"])
+        self.assertIn("3.0 nmi", h["detail"])
+        heli = lk["a00025"]
+        self.assertEqual(heli["why"], "helicopter")
+        self.assertIn("overhead now", heli["detail"])
+        self.assertIn("lookup", [a["kind"] for a in self.cap.sent])
+
+    def test_same_at_night_does_not_fire(self):
+        out, _ = self.engine().step(fx("lookup.json"), NIGHT)
+        self.assertEqual(self.lookups(out), {})
+
+    def test_never_in_public_file(self):
+        e = self.engine()
+        e.step(fx("lookup.json"), DAY)
+        pub = self.public()
+        self.assertNotIn("lookup", pub)
+        self.assertNotIn("Look ", pub)
+        for h in ("a00020", "a00025"):
+            self.assertNotIn(h, pub)
+        self.assertIn("lookup", [a["kind"] for a in self.private()])
+
+    def test_dedupe_two_hours(self):
+        e = self.engine()
+        e.step(fx("lookup.json"), DAY)
+        out, _ = e.step(fx("lookup.json"), DAY + 3600)
+        self.assertEqual(self.lookups(out), {})
+        out, _ = e.step(fx("lookup.json"), DAY + 2 * 3600 + 10)
+        self.assertEqual(sorted(self.lookups(out)), ["a00020", "a00025"])
+
+    def test_counts_toward_cap_but_emergency_still_goes(self):
+        self.cfg["notify"]["max_per_hour"] = "1"
+        e = self.engine()
+        e.step(fx("lookup.json"), DAY)
+        self.assertEqual(len(self.cap.sent), 1)          # second lookup held back
+        e.step(fx("squawk7700.json"), DAY + 8)
+        e.step(fx("squawk7700.json"), DAY + 16)
+        self.assertEqual(self.cap.sent[-1]["kind"], "emergency")
+
+    def test_no_home_no_lookup(self):
+        self.home = None
+        out, _ = self.engine().step(fx("lookup.json"), DAY)
+        self.assertEqual(self.lookups(out), {})
 
 
 if __name__ == "__main__":

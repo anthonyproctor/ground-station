@@ -25,7 +25,17 @@ engine=/etc/ground-station/alerts.conf.d/ntfy.conf
 install -d -m 700 /etc/ground-station /etc/ground-station/alerts.conf.d
 
 [ -f /etc/ntfy/server.yml.orig ] || cp -a /etc/ntfy/server.yml /etc/ntfy/server.yml.orig
+# keep the public base-url + iOS upstream once they're set (they hold the
+# station's host name, so they live only on the Pi, not in this repo).
+# First time: NTFY_BASE_URL=https://<host> NTFY_UPSTREAM=https://ntfy.sh sudo -E ./setup-ntfy.sh
+keep="$(grep -E '^(base-url|upstream-base-url):' /etc/ntfy/server.yml || true)"
 install -m 644 "$here/server.yml" /etc/ntfy/server.yml
+if [ -n "$keep" ]; then
+    printf '%s\n' "$keep" >> /etc/ntfy/server.yml
+else
+    if [ -n "${NTFY_BASE_URL:-}" ]; then echo "base-url: \"$NTFY_BASE_URL\"" >> /etc/ntfy/server.yml; fi
+    if [ -n "${NTFY_UPSTREAM:-}" ]; then echo "upstream-base-url: \"$NTFY_UPSTREAM\"" >> /etc/ntfy/server.yml; fi
+fi
 install -d -m 755 /etc/systemd/system/ntfy.service.d
 install -m 644 "$here/ntfy-station.conf" /etc/systemd/system/ntfy.service.d/station.conf
 install -d -o ntfy -g ntfy -m 700 /var/cache/ntfy /var/lib/ntfy

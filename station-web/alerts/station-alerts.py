@@ -11,6 +11,9 @@ reads readsb's aircraft.json and raises alerts:
   high        above 50,000 ft
   low_home    low and close to the station            (PRIVATE, never served)
   gps         several aircraft lose GPS integrity together (regional)
+  lookup      an interesting aircraft (military, rare, helicopter, heavy) about
+              to pass close and low enough to see, in daylight: which way to
+              look, how high, how far, when                (PRIVATE, phone only)
 
 Outputs:
   /var/lib/ground-station/alerts.jsonl      every alert, private (dir is 0700)
@@ -75,6 +78,24 @@ DEFAULTS = {
         # blank = use the height in location.env, else 5400 ft (Denver)
         "field_elev_ft": "",
     },
+    "lookup": {
+        "enabled": "yes",
+        "radius_nm": "5",
+        "max_agl_ft": "10000",
+        # sun at or above this many degrees = daylight. -6 = end of civil twilight
+        "sun_min_deg": "-6",
+        # don't announce more than this far ahead of closest approach
+        "max_lead_min": "10",
+        # this close (nmi) = "overhead now"
+        "overhead_nm": "0.5",
+        "dedupe_hours": "2",
+        # ICAO type designators; a trailing * matches a family (B74* = all 747s)
+        "heavy_types": "B74*,B77*,A38*,A124,A225,AN22,C17,C5,C5M,KC46,K46,K35*,C135,R135,"
+                       "E3*,E6,E4,B52,B1,B2,C130,C30J,L100,A400",
+        "military": "yes",
+        "rare": "yes",
+        "helicopters": "yes",
+    },
     "gps": {
         "enabled": "yes",
         "window_s": "300",
@@ -90,7 +111,7 @@ DEFAULTS = {
     "notify": {
         # none | log | ntfy | pushover | email   (Anthony picks; none = off)
         "notifier": "none",
-        "kinds": "emergency,military,rare,low_home,gps",
+        "kinds": "emergency,military,rare,low_home,gps,lookup",
         # global cap on notifications per rolling hour; these kinds skip it
         "max_per_hour": "6",
         "cap_exempt": "emergency",
@@ -121,6 +142,8 @@ EMERGENCY_NAMES = {
     "downed": "downed aircraft",
 }
 LOG_MAX_BYTES = 5 * 1024 * 1024
+COMPASS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+FT_PER_NM = 6076.12
 
 
 # ---------------------------------------------------------------- helpers
@@ -165,6 +188,27 @@ def dist_nm(lat1, lon1, lat2, lon2):
     dp, dl = p2 - p1, math.radians(lon2 - lon1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
     return 2 * 3440.065 * math.asin(math.sqrt(a))
+
+
+def sun_elevation(lat, lon, t):
+    """Sun elevation in degrees at lat/lon and unix time t (low-precision
+    almanac formulas, good to well under a degree; stdlib only)."""
+    d = t / 86400.0 + 2440587.5 - 2451545.0
+    g = math.radians((357.529 + 0.98560028 * d) % 360)
+    q = (280.459 + 0.98564736 * d) % 360
+    lam = math.radians(q + 1.915 * math.sin(g) + 0.020 * math.sin(2 * g))
+    eps = math.radians(23.439 - 0.00000036 * d)
+    ra = math.degrees(math.atan2(math.cos(eps) * math.sin(lam), math.cos(lam)))
+    dec = math.asin(math.sin(eps) * math.sin(lam))
+    gmst = (18.697374558 + 24.06570982441908 * d) % 24
+    ha = math.radians(gmst * 15 + lon - ra)
+    la = math.radians(lat)
+    return math.degrees(math.asin(math.sin(la) * math.sin(dec) + math.cos(la) * math.cos(dec) * math.cos(ha)))
+
+
+def local_nm(home_lat, home_lon, lat, lon):
+    """(east, north) of a point from home in nmi, flat earth (fine inside ~20 nmi)."""
+    return ((lon - home_lon) * 60.0 * math.cos(math.radians(home_lat)), (lat - home_lat) * 60.0)
 
 
 def read_location(path):
@@ -280,6 +324,23 @@ class TarDb:
             self.counts = load_json(os.path.join(self.typecount_dir, "typecounts-%s.json" % name), {})
         return self.counts.get(t, 0)
 
+    def desc(self, t):
+        """ICAO description code, e.g. L4J (landplane, 4 jets), H2T (helicopter)."""
+        self.type_name(t)
+        v = self.typenames.get(t)
+        return v[1] if isinstance(v, list) and len(v) > 1 else ""
+
+    def operator(self, callsign):
+        if getattr(self, "operators", None) is None:
+            self.operators = {}
+            if self.path:
+                try:
+                    self.operators = gz_json(os.path.join(self.path, "operators.js"))
+                except (OSError, ValueError):
+                    pass
+        code = callsign[:3] if len(callsign) > 3 and callsign[:3].isalpha() and callsign[3:4].isdigit() else ""
+        return (self.operators.get(code) or {}).get("n", "") if code else ""
+
     def type_name(self, t):
         if self.typenames is None:
             self.typenames = {}
@@ -319,10 +380,10 @@ class NtfyNotifier(Notifier):
     sends ntfy.sh just a poll_request (message id) so iOS can wake up.
     """
     name = "ntfy"
-    PRIORITY = {"emergency": 5, "gps": 4, "low_home": 3, "military": 3,
+    PRIORITY = {"emergency": 5, "gps": 4, "lookup": 4, "low_home": 3, "military": 3,
                 "rare": 3, "high": 2, "gps_clear": 2}
     TAGS = {"emergency": "rotating_light", "gps": "satellite_antenna", "gps_clear": "white_check_mark",
-            "low_home": "house", "military": "airplane", "rare": "star", "high": "arrow_up"}
+            "low_home": "house", "lookup": "eyes", "military": "airplane", "rare": "star", "high": "arrow_up"}
 
     def send(self, alert):
         import urllib.request
@@ -550,6 +611,22 @@ class Engine:
         else:
             self.field = 5400.0
 
+        lk = cfg["lookup"]
+        self.lookup_on = bool(home) and cfg.getboolean("lookup", "enabled")
+        self.lk_r = float(lk["radius_nm"])
+        self.lk_agl = float(lk["max_agl_ft"])
+        self.lk_sun = float(lk["sun_min_deg"])
+        self.lk_lead = float(lk["max_lead_min"])
+        self.lk_over = float(lk["overhead_nm"])
+        self.lk_window = float(lk["dedupe_hours"]) * 3600
+        heavy = [x.upper() for x in csv_set(lk["heavy_types"])]
+        self.lk_heavy = {x for x in heavy if not x.endswith("*")}
+        self.lk_heavy_fam = tuple(x[:-1] for x in heavy if x.endswith("*"))
+        self.lk_mil = cfg.getboolean("lookup", "military")
+        self.lk_rare = cfg.getboolean("lookup", "rare")
+        self.lk_heli = cfg.getboolean("lookup", "helicopters")
+        self.lk_sun_cache = (0, -90.0)
+
         self.gps = GpsMonitor(cfg["gps"]) if cfg.getboolean("gps", "enabled") else None
         self.notifier = notifier if notifier is not None else make_notifier(cfg)
         kinds = csv_set(cfg["notify"]["kinds"])
@@ -604,10 +681,11 @@ class Engine:
         alt = a.get("alt_baro")
         return alt if isinstance(alt, (int, float)) else None
 
-    def _emit(self, out, now, kind, a, ident, title, detail, private=False, extra=None, key=None):
+    def _emit(self, out, now, kind, a, ident, title, detail, private=False, extra=None, key=None,
+              window=None):
         hexid, cs, reg, t, _ = ident
         key = key or "%s:%s" % (kind, hexid)
-        if now - self.sent.get(key, 0) < self.dedupe:
+        if now - self.sent.get(key, 0) < (self.dedupe if window is None else window):
             return
         self.sent[key] = now
         alert = {
@@ -692,6 +770,10 @@ class Engine:
                                        "within %g nmi of the station" % self.home_r, private=True,
                                        extra={"agl_ft": int(agl), "dist_nm": round(d, 2)})
 
+        if self.lookup_on and self._daylight(now):
+            for a in ac:
+                self._lookup(out, now, a)
+
         for pk in [k for k in self.pending if k not in live_pending]:
             del self.pending[pk]
 
@@ -713,6 +795,75 @@ class Engine:
             self._record(alert)
         self._write_public(now, gps_status, force=bool(out))
         return out, gps_status
+
+    def _daylight(self, now):
+        t, el = self.lk_sun_cache
+        if now - t > 60:
+            el = sun_elevation(self.home[0], self.home[1], now)
+            self.lk_sun_cache = (now, el)
+        return el >= self.lk_sun
+
+    def _interesting(self, a, ident):
+        """Why this aircraft is worth stepping outside for, or None."""
+        t = (ident[3] or "").upper()
+        desc = self.db.desc(t) if (self.db and t and hasattr(self.db, "desc")) else ""
+        if self.lk_mil and ident[4]:
+            return "military"
+        if self.lk_heli and (a.get("category") == "A7" or desc[:1] in ("H", "G", "R")):
+            return "helicopter"
+        if t and (t in self.lk_heavy or (self.lk_heavy_fam and t.startswith(self.lk_heavy_fam))):
+            return "heavy"
+        if self.lk_rare and self.db and t and 0 < self.db.worldwide(t) <= self.rare_max:
+            return "rare"
+        return None
+
+    def _lookup(self, out, now, a):
+        """PRIVATE look-up alert: direction, elevation, distance, time to closest."""
+        if "lat" not in a or "lon" not in a or a.get("seen_pos", 999) > self.max_seen:
+            return
+        h = a.get("alt_geom")
+        h = h if isinstance(h, (int, float)) else self._alt(a)
+        if h is None:
+            return
+        agl = h - self.field
+        if agl > self.lk_agl:
+            return
+        e, n = local_nm(self.home[0], self.home[1], a["lat"], a["lon"])
+        dist = math.hypot(e, n)
+        if dist > self.lk_r:
+            return
+        gs, trk = a.get("gs"), a.get("track")
+        if dist <= self.lk_over:
+            when, tmin = "overhead now", 0.0
+        elif isinstance(gs, (int, float)) and isinstance(trk, (int, float)) and gs > 30:
+            ve, vn = gs * math.sin(math.radians(trk)), gs * math.cos(math.radians(trk))
+            tcpa = -(e * ve + n * vn) / (ve * ve + vn * vn) * 60.0  # minutes
+            cpa = math.hypot(e + ve * tcpa / 60.0, n + vn * tcpa / 60.0)
+            if tcpa < -0.5 or tcpa > self.lk_lead:
+                return  # already past, or too far ahead to be useful
+            if tcpa <= 0.5:
+                when, tmin = "closest now", 0.0
+            else:
+                when, tmin = "closest in about %d min (%.1f nmi)" % (max(1, round(tcpa)), cpa), tcpa
+        else:
+            return  # no track/speed: can't tell if it's coming
+        ident = self._ident(a)
+        why = self._interesting(a, ident)
+        if not why:
+            return
+        brg = math.degrees(math.atan2(e, n)) % 360
+        look = COMPASS[int((brg + 22.5) // 45) % 8]
+        elev = math.degrees(math.atan2(max(agl, 0), dist * FT_PER_NM))
+        hexid, cs, reg, t, _ = ident
+        tname = self.db.type_name(t) if (self.db and t) else (t or "aircraft")
+        op = self.db.operator(cs) if (self.db and cs and hasattr(self.db, "operator")) else ""
+        who = ", ".join(x for x in (cs or reg or hexid.upper(), op) if x)
+        up = "straight up" if elev >= 75 else "about %d\u00b0 up" % round(elev)
+        title = "Look %s, %s: %s (%s)" % (look, up, tname, who)
+        detail = "%s, %.1f nmi away, %s ft above ground, %s" % (why, dist, format(int(agl), ","), when)
+        self._emit(out, now, "lookup", a, ident, title, detail, private=True, window=self.lk_window,
+                   extra={"look": look, "elev_deg": round(elev), "dist_nm": round(dist, 1),
+                          "eta_min": round(tmin, 1), "why": why, "agl_ft": int(agl)})
 
     def _record(self, alert):
         append_jsonl(self.log_path, alert)

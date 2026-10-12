@@ -1,10 +1,10 @@
-# ntfy server for the Ground Station alerts, LOCAL ONLY for now.
-# Installed to /etc/ntfy/server.yml by station-web/ntfy/setup-ntfy.sh.
+# ntfy server for the Ground Station alerts.
+# Installed to /etc/ntfy/server.yml by station-web/ntfy/setup-ntfy.sh, which
+# appends base-url (the public station root) and upstream-base-url
+# (https://ntfy.sh, iOS wake-ups) on the Pi only, keeping the host out of git.
 #
-# Listens on 127.0.0.1 only. Nothing outside the Pi can reach it yet: making
-# it reachable from the phone (a web-server proxy on the public site) and
-# turning on iOS instant push (upstream-base-url) are separate steps that
-# Anthony approves; see station-web/ntfy/README.md.
+# Listens on 127.0.0.1; the phone reaches it through lighttpd
+# (97-station-ntfy.conf proxies only /v1/ and gs-* topics).
 
 listen-http: "127.0.0.1:2586"
 

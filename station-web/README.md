@@ -46,6 +46,7 @@ The map is public, so the receiver location is never published:
 | rare | type with 25 or fewer airframes worldwide (the same type counts as "Rarest type"), once per type | yes |
 | high | above 50,000 ft | yes |
 | low_home | within 2 nmi of the station and under 2,000 ft above ground | **no, private log + phone only** |
+| lookup | military, rare, helicopter or heavy (configurable list) within 5 nmi, under 10,000 ft above ground, in daylight (sun at or above -6°, computed on the Pi), closing or at closest approach. It says which way to look, how high, how far, and minutes to closest approach. Once per aircraft per 2 h | **no, phone only** |
 | gps | 3+ aircraft (and 25%+ of those checked) lose GPS integrity in 5 min | yes, "Denver area" only |
 
 One alert per aircraft per kind per 4 h. GPS: an aircraft counts as degraded when readsb reports `gpsOkBefore`, or when its NACp drops below 8 or NIC below 7 **after** it was seen good, so aircraft with permanently poor GPS can't fake an event.
@@ -72,10 +73,8 @@ The ntfy server ([official apt repo](https://docs.ntfy.sh/install/), armhf) runs
 
 The passwords, tokens and topic go to `/etc/ground-station/ntfy-credentials.txt` (root, 600), and the engine's side goes to `/etc/ground-station/alerts.conf.d/ntfy.conf` (root, 600). Nothing secret is printed or committed.
 
-The engine sends emergency, military, rare, GPS and the private low-over-the-house alerts. `high` is off by default. Limits are one per aircraft per kind per 4 h, and at most 6 an hour overall. Emergencies skip the hourly cap, and the next sent message says how many were held back. The service can only open sockets to localhost.
+The engine sends emergency, military, rare, GPS and the private low-over-the-house and look-up alerts. `high` is off (Anthony: not useful on the phone). Look-ups count toward the hourly cap; emergencies never do. Limits are one per aircraft per kind per 4 h, and at most 6 an hour overall. Emergencies skip the hourly cap, and the next sent message says how many were held back. The service can only open sockets to localhost.
 
-**Not done yet, needs Anthony's OK:**
-1. **Reaching the phone.** ntfy can't run on a sub-path, so the plan is a lighttpd proxy on `:8504` for only ntfy's paths: `/v1/` and `/gs-...` topics, sent to `127.0.0.1:2586`. The existing Funnel (`/` to `:8504`) already carries those paths, so no Funnel change is needed.
-2. **Instant iOS pushes.** This sets `base-url` to the station's public root and `upstream-base-url: "https://ntfy.sh"`. For each message, ntfy.sh then gets only a `poll_request` with the message id and a hashed topic. The message text stays on the Pi, and the iOS app fetches it from here. Without this, iOS delivery depends on background refresh and can be late.
+**Phone path (approved and live 2026-10-12):** ntfy can't run on a sub-path, so `97-station-ntfy.conf` proxies only ntfy's paths on `:8504`, `/v1/` and `/gs-...` topics, to `127.0.0.1:2586`. The existing Funnel (`/` to `:8504`) carries them, so no Funnel change was needed. `base-url` is the station's public root and `upstream-base-url` is `https://ntfy.sh`. For each message, ntfy.sh gets only a `poll_request` with the message id and a hashed topic. The text stays on the Pi, and the iOS app fetches it from here. Those two lines live only in the Pi's `/etc/ntfy/server.yml`; `setup-ntfy.sh` keeps them when it re-runs.
 
 Phone steps: `ntfy/PHONE-SETUP.md`.

@@ -41,6 +41,23 @@ max_agl_ft = 2000
 # blank = height from location.env, else 5400 ft
 field_elev_ft =
 
+[lookup]
+# PRIVATE: "go outside and look up" for interesting aircraft about to pass
+# close and low in daylight. Phone only, never on the public page.
+enabled = yes
+radius_nm = 5
+max_agl_ft = 10000
+# sun at or above this = daylight (-6 = civil twilight)
+sun_min_deg = -6
+max_lead_min = 10
+overhead_nm = 0.5
+dedupe_hours = 2
+# ICAO type designators; trailing * = family
+heavy_types = B74*,B77*,A38*,A124,A225,AN22,C17,C5,C5M,KC46,K46,K35*,C135,R135,E3*,E6,E4,B52,B1,B2,C130,C30J,L100,A400
+military = yes
+rare = yes
+helicopters = yes
+
 [gps]
 enabled = yes
 window_s = 300
@@ -57,8 +74,8 @@ region = Denver area
 # none | log | ntfy | pushover | email. Built-in default is none (nothing is
 # sent). install.sh switches the Pi's copy to ntfy with the local server.
 notifier = none
-# high is left out on purpose; add it here if you want those too
-kinds = emergency,military,rare,low_home,gps
+# high is left out on purpose (Anthony: not useful on the phone)
+kinds = emergency,military,rare,low_home,gps,lookup
 # global cap per rolling hour (on top of one per aircraft per kind per
 # dedupe_hours); kinds in cap_exempt always go through
 max_per_hour = 6

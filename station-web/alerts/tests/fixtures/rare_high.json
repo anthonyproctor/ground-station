@@ -11,7 +11,9 @@
    "nac_p": 10,
    "nic": 8,
    "version": 2,
-   "flight": "FDX9    "
+   "flight": "FDX9    ",
+   "lat": 39.85,
+   "lon": -104.68
   },
   {
    "hex": "a00004",
@@ -22,7 +24,9 @@
    "nac_p": 10,
    "nic": 8,
    "version": 2,
-   "flight": "N500XX  "
+   "flight": "N500XX  ",
+   "lat": 39.6,
+   "lon": -104.9
   }
  ]
 }

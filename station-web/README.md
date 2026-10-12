@@ -49,6 +49,8 @@ The map is public, so the receiver location is never published:
 | lookup | military, rare, helicopter or heavy (configurable list) within 5 nmi, under 10,000 ft above ground, in daylight (sun at or above -6°, computed on the Pi), closing or at closest approach. It says which way to look, how high, how far, and minutes to closest approach. Once per aircraft per 2 h | **no, phone only** |
 | gps | 3+ aircraft (and 25%+ of those checked) lose GPS integrity in 5 min | yes, "Denver area" only |
 
+Alert text reads like `Military: DAGGR44 · PILATUS PC-12 (07-0779) · 8,400 ft near Castle Rock`. The place is the nearest well-known Front Range town to the **aircraft** (a built-in list), never a distance or direction from the station. Military and rare alerts wait up to 5 min for a fresh position; if none arrives they go out marked "no position yet". Emergencies never wait. Phone notifications also add "N nmi <dir> of home", which is phone-only and never served, and tapping one opens `/map/?icao=<hex>&zoom=11`, which tar1090 selects, isolates and follows.
+
 One alert per aircraft per kind per 4 h. GPS: an aircraft counts as degraded when readsb reports `gpsOkBefore`, or when its NACp drops below 8 or NIC below 7 **after** it was seen good, so aircraft with permanently poor GPS can't fake an event.
 
 Files:

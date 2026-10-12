@@ -11,7 +11,9 @@
    "nac_p": 10,
    "nic": 8,
    "version": 2,
-   "flight": "RCH123  "
+   "flight": "RCH123  ",
+   "lat": 39.4,
+   "lon": -104.85
   },
   {
    "hex": "a77777",
@@ -23,7 +25,9 @@
    "nic": 8,
    "version": 2,
    "dbFlags": 1,
-   "flight": "TEST1   "
+   "flight": "TEST1   ",
+   "lat": 40.02,
+   "lon": -105.25
   },
   {
    "hex": "a00002",
@@ -34,7 +38,9 @@
    "nac_p": 10,
    "nic": 8,
    "version": 2,
-   "flight": "SWA2    "
+   "flight": "SWA2    ",
+   "lat": 39.74,
+   "lon": -104.98
   }
  ]
 }

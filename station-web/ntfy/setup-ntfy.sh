@@ -76,6 +76,8 @@ EOF
 fi
 
 topic="$(sed -n 's/^topic=//p' "$creds")"
+# tap-to-open link: the public map on the same host as ntfy's base-url (Pi only)
+base="$(sed -n 's/^base-url:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}[[:space:]]*$/\1/p' /etc/ntfy/server.yml)"
 tok_station="$(sed -n 's/^station_token=//p' "$creds")"
 umask 077
 cat > "$engine" <<EOF
@@ -85,6 +87,7 @@ notifier = ntfy
 ntfy_url = http://127.0.0.1:2586
 ntfy_topic = $topic
 ntfy_token = $tok_station
+map_url = ${base:+$base/map}
 EOF
 chmod 600 "$engine"
 echo "ntfy: active on 127.0.0.1:2586, deny-all. Credentials in $creds (root, 600)."

@@ -29,11 +29,12 @@ class FakeDb:
         "a00023": ("N574UP", "B744", False),
         "a00024": ("N575UP", "B744", False),
         "a00025": ("N135HX", "EC35", False),
+        "ae68f1": ("07-0779", "PC12", True),
     }
     COUNTS = {"C17": 280, "B764": 18, "GLF6": 600, "B738": 7000, "B744": 400, "EC35": 1200}
     DESC = {"EC35": "H2T", "B744": "L4J", "B738": "L2J", "C17": "L4J"}
     OPS = {"UPS": "United Parcel Service"}
-    NAMES = {"B764": "BOEING 767-400", "B744": "BOEING 747-400", "C17": "BOEING C-17 Globemaster 3"}
+    NAMES = {"B764": "BOEING 767-400", "B744": "BOEING 747-400", "PC12": "PILATUS PC-12", "C17": "BOEING C-17 Globemaster 3"}
 
     def maybe_refresh(self):
         pass
@@ -162,6 +163,57 @@ class TestMilitaryRareHigh(Base):
         self.assertFalse([a for a in out if a["kind"] == "rare"])
 
 
+class TestPlacesAndWaiting(Base):
+    def test_nearest_place(self):
+        self.assertEqual(sa.nearest_place(39.40, -104.85, 30), "Castle Rock")
+        self.assertEqual(sa.nearest_place(39.85, -104.68, 30), "DIA")
+        self.assertIsNone(sa.nearest_place(10.0, 20.0, 30))
+
+    def test_military_text_has_callsign_type_alt_place(self):
+        out, _ = self.engine().step(fx("military_withpos.json"), T0)
+        m = [a for a in out if a["kind"] == "military"][0]
+        self.assertEqual(m["title"], "Military: DAGGR44 \u00b7 PILATUS PC-12 (07-0779) \u00b7 8,400 ft near Castle Rock")
+        pub = json.loads(self.public())["alerts"][0]
+        self.assertIn("near Castle Rock", pub["title"])
+        self.assertNotIn("home_rel", pub)
+        self.assertNotIn("home", self.public())
+        self.assertIn("of home", m["home_rel"])  # phone-only field
+
+    def test_waits_for_position_then_sends(self):
+        e = self.engine()
+        out, _ = e.step(fx("military_nopos.json"), T0)
+        self.assertFalse([a for a in out if a["kind"] == "military"])  # held
+        out, _ = e.step(fx("military_nopos.json"), T0 + 60)
+        self.assertFalse([a for a in out if a["kind"] == "military"])
+        out, _ = e.step(fx("military_withpos.json"), T0 + 120)
+        m = [a for a in out if a["kind"] == "military"]
+        self.assertEqual(len(m), 1)
+        self.assertIn("near Castle Rock", m[0]["title"])
+        self.assertNotIn("no_position", m[0])
+        out, _ = e.step(fx("military_withpos.json"), T0 + 400)
+        self.assertFalse([a for a in out if a["kind"] == "military"])  # de-dup still holds
+
+    def test_never_gets_position_sent_at_end_marked(self):
+        e = self.engine()
+        e.step(fx("military_nopos.json"), T0)
+        out, _ = e.step({"aircraft": []}, T0 + 200)  # gone quiet, still waiting
+        self.assertFalse([a for a in out if a["kind"] == "military"])
+        out, _ = e.step({"aircraft": []}, T0 + 301)
+        m = [a for a in out if a["kind"] == "military"]
+        self.assertEqual(len(m), 1)
+        self.assertTrue(m[0]["no_position"])
+        self.assertIn("no position yet", m[0]["title"])
+        self.assertIn("DAGGR44", m[0]["title"])
+
+    def test_emergency_never_waits(self):
+        e = self.engine()
+        e.step(fx("squawk7700.json"), T0)  # fixture has no position
+        out, _ = e.step(fx("squawk7700.json"), T0 + 8)
+        em = [a for a in out if a["kind"] == "emergency"]
+        self.assertEqual(len(em), 1)
+        self.assertIn("no position yet", em[0]["title"])
+
+
 class TestLowHomePrivate(Base):
     def test_low_near_home_is_private_only(self):
         out, _ = self.engine().step(fx("low_home.json"), T0)
@@ -244,8 +296,8 @@ class TestNotifier(Base):
     def test_hourly_cap_holds_back_but_emergency_goes_through(self):
         self.cfg["notify"]["max_per_hour"] = "2"
         e = self.engine()
-        doc = {"aircraft": [dict(hex="ae%04x" % i, type="adsb_icao", seen=1, alt_baro=20000)
-                            for i in range(5)]}
+        doc = {"aircraft": [dict(hex="ae%04x" % i, type="adsb_icao", seen=1, seen_pos=1, alt_baro=20000,
+                                 lat=39.7, lon=-104.9) for i in range(5)]}
         FakeDb.INFO.update({"ae%04x" % i: ("", "C17", True) for i in range(5)})
         out, _ = e.step(doc, T0)
         self.assertEqual(len([a for a in out if a["kind"] == "military"]), 5)  # all logged
@@ -273,13 +325,15 @@ class TestNotifier(Base):
         try:
             n = sa.NtfyNotifier({"ntfy_url": "http://127.0.0.1:2586", "ntfy_topic": "gs-test",
                                  "ntfy_token": "tk_x", "map_url": "https://example.test/map"})
-            n.send({"kind": "emergency", "hex": "a1b2c3", "title": "UAL123 squawk 7700", "detail": "x"})
+            n.send({"kind": "emergency", "hex": "a1b2c3", "title": "UAL123 squawk 7700", "detail": "x",
+                    "home_rel": "12 nmi NE of home"})
         finally:
             urllib.request.urlopen = real
         self.assertEqual(sent["url"], "http://127.0.0.1:2586/")
+        self.assertIn("(12 nmi NE of home)", sent["body"]["message"])
         self.assertEqual(sent["body"]["topic"], "gs-test")
         self.assertEqual(sent["body"]["priority"], 5)
-        self.assertEqual(sent["body"]["click"], "https://example.test/map/?icao=a1b2c3")
+        self.assertEqual(sent["body"]["click"], "https://example.test/map/?icao=a1b2c3&zoom=11")
         self.assertEqual(sent["auth"], "Bearer tk_x")
 
     def test_state_survives_restart(self):

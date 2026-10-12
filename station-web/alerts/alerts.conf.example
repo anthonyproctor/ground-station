@@ -11,6 +11,14 @@ dedupe_hours = 4
 public_max = 30
 public_hours = 48
 max_seen_s = 15
+# military / rare wait up to wait_for_position_s for a fresh position (seen
+# within fresh_position_s) so the text can say where and the map can follow;
+# then they go out marked "no position yet". Emergencies never wait.
+wait_kinds = military,rare
+wait_for_position_s = 300
+fresh_position_s = 30
+# "near <town>" uses the nearest built-in Front Range place within this (nmi)
+place_radius_nm = 30
 
 [emergency]
 enabled = yes
@@ -83,8 +91,10 @@ cap_exempt = emergency
 ntfy_url = http://127.0.0.1:2586
 ntfy_topic =
 ntfy_token =
-# tap a notification to open the public map at that aircraft: https://<host>/map
+# tap a notification to open the public map following that aircraft:
+# https://<host>/map (setup-ntfy.sh fills this on the Pi; keep the host out of git)
 map_url =
+map_zoom = 11
 # pushover / email need outside network: add a drop-in that widens
 # IPAddressAllow in station-alerts.service first
 pushover_token =

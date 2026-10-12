@@ -8,7 +8,7 @@
 <title>Ground Station</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%2338bdf8' d='M16 2l3 10 10 4-10 4-3 10-3-10-10-4 10-4z'/%3E%3C/svg%3E">
 <style>
-:root{--bg:#0b0f14;--card:#121821;--line:#1f2a37;--fg:#e6edf3;--dim:#8b98a8;--acc:#38bdf8;--ok:#22c55e;--warn:#f59e0b}
+:root{--bg:#0b0f14;--card:#121821;--line:#1f2a37;--fg:#e6edf3;--dim:#8b98a8;--acc:#38bdf8;--ok:#22c55e;--warn:#f59e0b;--bad:#f87171}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-text-size-adjust:100%}
 main{max-width:760px;margin:0 auto;padding:20px 16px calc(24px + env(safe-area-inset-bottom))}
@@ -39,6 +39,23 @@ ul.best span:last-child{text-align:right;font-weight:600}
 .wx{margin:-8px 0 16px;padding:10px 14px;background:var(--card);border:1px solid var(--line);border-radius:14px;font-size:.95rem}
 .wx b{font-weight:600}.wx .cat{display:inline-block;padding:1px 7px;border-radius:6px;font-size:.75rem;font-weight:700;margin-left:4px;color:#04121c;background:var(--ok)}
 .wx .cat.MVFR{background:#60a5fa}.wx .cat.IFR{background:#f87171}.wx .cat.LIFR{background:#e879f9}
+.tile.wide{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
+.tile.wide .gl{flex:1 1 180px;min-width:0}
+.tile.wide .v{font-size:1.4rem}
+.gv.ok{color:var(--ok)}.gv.some{color:var(--warn)}.gv.interference{color:var(--bad)}
+.spark{flex:1 1 200px;min-width:0;height:40px;display:block}
+ul.alerts{list-style:none;margin:0;padding:0;background:var(--card);border:1px solid var(--line);border-radius:14px}
+ul.alerts li{display:flex;align-items:baseline;gap:10px;padding:12px 14px;border-top:1px solid var(--line)}
+ul.alerts li:first-child{border-top:0}
+ul.alerts .b{flex:none;font-size:.7rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:6px;color:#04121c;background:var(--acc)}
+ul.alerts .b.emergency{background:var(--bad)}ul.alerts .b.military{background:#a3e635}ul.alerts .b.rare{background:#e879f9}
+ul.alerts .b.high{background:#60a5fa}ul.alerts .b.gps{background:var(--warn)}ul.alerts .b.gps_clear{background:var(--ok)}
+ul.alerts .m{flex:1;min-width:0;overflow-wrap:anywhere}
+ul.alerts .m a{color:var(--fg);text-decoration:none;font-weight:600}
+ul.alerts .m a:hover{text-decoration:underline}
+ul.alerts .d{display:block;color:var(--dim);font-size:.85rem;font-weight:400}
+ul.alerts .w{flex:none;color:var(--dim);font-size:.8rem;white-space:nowrap}
+ul.alerts li.none{color:var(--dim)}
 footer{color:var(--dim);font-size:.8rem;margin-top:22px;display:flex;flex-wrap:wrap;gap:6px 14px}
 @media (min-width:640px){.grid{grid-template-columns:repeat(4,1fr)}.tile .v{font-size:1.8rem}}
 </style>
@@ -54,6 +71,8 @@ footer{color:var(--dim);font-size:.8rem;margin-top:22px;display:flex;flex-wrap:w
   <div class="tile"><div class="k">Messages/sec</div><div class="v" id="mps">–</div><div class="n">radio packets decoded</div></div>
   <div class="tile"><div class="k">Highest now</div><div class="v" id="hialt">–</div><div class="n" id="hics">&nbsp;</div></div>
   <div class="tile"><div class="k">Max range today</div><div class="v" id="range">–</div><div class="n" id="rangen">&nbsp;</div></div>
+  <div class="tile wide" id="gpstile"><div class="gl"><div class="k">GPS health</div><div class="v gv" id="gps">–</div><div class="n" id="gpsn">&nbsp;</div></div>
+    <svg class="spark" id="gpsspark" viewBox="0 0 288 40" preserveAspectRatio="none" role="img" aria-label="Aircraft with GPS trouble, last 24 hours"></svg></div>
 </section>
 
 <nav class="btns">
@@ -69,6 +88,9 @@ footer{color:var(--dim);font-size:.8rem;margin-top:22px;display:flex;flex-wrap:w
   <li><span>Highest today</span><span id="hitoday">–</span></li>
   <li><span>Military</span><span id="mil">–</span></li>
 </ul>
+
+<h2>Alerts</h2>
+<ul class="alerts" id="alerts"><li class="none">Loading…</li></ul>
 
 <footer><span id="temp"></span><span id="up"></span><span id="upd"></span></footer>
 </main>
@@ -125,13 +147,57 @@ footer{color:var(--dim);font-size:.8rem;margin-top:22px;display:flex;flex-wrap:w
     sm.textContent='DIA (KDEN) report'+(t?' at '+t:'')+' \u00b7 aviationweather.gov';el.appendChild(sm);
     el.title=w.raw||'';el.hidden=false;
   }
+  var LABEL={emergency:'Emergency',military:'Military',rare:'Rare',high:'Very high',gps:'GPS',gps_clear:'GPS ok'};
+  function when(t){
+    var d=new Date(t*1000),now=new Date();
+    var tm=d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+    return d.toDateString()===now.toDateString()?tm:d.toLocaleDateString([], {weekday:'short'})+' '+tm;
+  }
+  function al(){
+    fetch('station-data/alerts.json',{cache:'no-store'}).then(function(r){return r.json()}).then(function(s){
+      var ul=$('alerts');ul.textContent='';
+      var list=(s.alerts||[]).slice(0,10);
+      if(!list.length){var li=document.createElement('li');li.className='none';li.textContent='Nothing unusual in the last two days.';ul.appendChild(li)}
+      list.forEach(function(a){
+        var li=document.createElement('li');
+        var b=document.createElement('span');b.className='b '+a.kind;b.textContent=LABEL[a.kind]||a.kind;li.appendChild(b);
+        var m=document.createElement('span');m.className='m';
+        var t;
+        if(a.hex){t=document.createElement('a');t.href='map/?icao='+encodeURIComponent(a.hex)}else{t=document.createElement('span')}
+        t.textContent=a.title;m.appendChild(t);
+        if(a.detail){var d=document.createElement('span');d.className='d';d.textContent=a.detail;m.appendChild(d)}
+        li.appendChild(m);
+        var w=document.createElement('span');w.className='w';w.textContent=when(a.t);li.appendChild(w);
+        ul.appendChild(li);
+      });
+      gps(s.gps);
+    }).catch(function(){var ul=$('alerts');if(ul.querySelector('.none'))ul.firstChild.textContent='Alerts not available right now.'});
+  }
+  function gps(g){
+    var v=$('gps'),n=$('gpsn'),sv=$('gpsspark');
+    if(!g){v.textContent='–';n.textContent='monitor not running';sv.style.display='none';return}
+    var txt={ok:'Normal',some:'A few degraded',interference:'Possible interference'}[g.state]||g.state;
+    v.textContent=txt;v.className='v gv '+g.state;
+    n.textContent=g.tracked?(g.degraded+' of '+g.tracked+' aircraft lost GPS integrity, last '+g.window_min+' min'):'no ADS-B aircraft to check right now';
+    var pts=g.series||[],NS='http://www.w3.org/2000/svg';sv.textContent='';
+    sv.style.display=pts.length<2?'none':'';
+    if(pts.length<2)return;
+    var t1=pts[pts.length-1][0],t0=t1-86400,max=1;
+    pts.forEach(function(p){if(p[1]>max)max=p[1]});
+    var x=function(t){return Math.max(0,(t-t0)/86400*288)},y=function(c){return 38-c/max*36};
+    var tr='',dg='';
+    pts.forEach(function(p,i){if(p[0]<t0)return;tr+=(tr?'L':'M')+x(p[0]).toFixed(1)+','+y(p[1]).toFixed(1);dg+=(dg?'L':'M')+x(p[0]).toFixed(1)+','+y(p[2]).toFixed(1)});
+    [[tr,'var(--line)'],[dg,'var(--warn)']].forEach(function(q){var pa=document.createElementNS(NS,'path');pa.setAttribute('d',q[0]);pa.setAttribute('fill','none');pa.setAttribute('stroke',q[1]);pa.setAttribute('stroke-width','2');pa.setAttribute('vector-effect','non-scaling-stroke');sv.appendChild(pa)});
+    var tl=document.createElementNS(NS,'title');tl.textContent='Last 24 h: grey = aircraft checked, amber = aircraft with GPS trouble';sv.appendChild(tl);
+  }
   fetch('map/data/stats.json',{cache:'no-store'}).then(function(r){return r.json()}).then(function(s){
     var m=s.last1min&&s.last1min.messages_valid;if(m!=null&&$('mps').textContent==='\u2013')$('mps').textContent=fmt(Math.round(m/60));
   }).catch(function(){});
-  ac();st();
+  ac();st();al();
   setInterval(function(){if(!document.hidden)ac()},5000);
   setInterval(function(){if(!document.hidden)st()},60000);
-  document.addEventListener('visibilitychange',function(){if(!document.hidden){ac();st()}});
+  setInterval(function(){if(!document.hidden)al()},20000);
+  document.addEventListener('visibilitychange',function(){if(!document.hidden){ac();st();al()}});
 })();
 </script>
 </body>

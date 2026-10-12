@@ -1,0 +1,80 @@
+# Ground Station alerts config. Installed to /etc/ground-station/alerts.conf
+# (root, mode 600) only if that file doesn't exist yet. Every value shown is
+# the built-in default, so a missing key or a missing file changes nothing.
+# Restart after editing:  sudo systemctl restart station-alerts
+
+[engine]
+poll_seconds = 8
+# one alert per aircraft per kind per this many hours
+dedupe_hours = 4
+# how many / how old public alerts the home page keeps
+public_max = 30
+public_hours = 48
+max_seen_s = 15
+
+[emergency]
+enabled = yes
+squawks = 7500,7600,7700
+# readsb `emergency` values that don't alert (lifeguard = air ambulance)
+ignore = none,reserved,lifeguard
+# polls in a row before alerting, filters one-off garbled squawks
+confirm_polls = 2
+
+[military]
+enabled = yes
+
+[rare]
+enabled = yes
+# alert when this many airframes of the type exist, or fewer. One alert per
+# TYPE per dedupe_hours. 25 skips the 767-400 (38) that Denver sees daily.
+max_worldwide = 25
+
+[high]
+enabled = yes
+min_alt_ft = 50000
+
+[low_home]
+# PRIVATE: uses /etc/ground-station/location.env, log only, never served
+enabled = yes
+radius_nm = 2
+max_agl_ft = 2000
+# blank = height from location.env, else 5400 ft
+field_elev_ft =
+
+[gps]
+enabled = yes
+window_s = 300
+nacp_min = 8
+nic_min = 7
+min_tracked = 6
+min_degraded = 3
+min_share = 0.25
+clear_after_s = 600
+cooldown_hours = 2
+region = Denver area
+
+[notify]
+# none | log | ntfy | pushover | email. Built-in default is none (nothing is
+# sent). install.sh switches the Pi's copy to ntfy with the local server.
+notifier = none
+# high is left out on purpose; add it here if you want those too
+kinds = emergency,military,rare,low_home,gps
+# global cap per rolling hour (on top of one per aircraft per kind per
+# dedupe_hours); kinds in cap_exempt always go through
+max_per_hour = 6
+cap_exempt = emergency
+ntfy_url = http://127.0.0.1:2586
+ntfy_topic =
+ntfy_token =
+# tap a notification to open the public map at that aircraft: https://<host>/map
+map_url =
+# pushover / email need outside network: add a drop-in that widens
+# IPAddressAllow in station-alerts.service first
+pushover_token =
+pushover_user =
+smtp_host =
+smtp_port = 587
+smtp_user =
+smtp_password =
+email_from =
+email_to =

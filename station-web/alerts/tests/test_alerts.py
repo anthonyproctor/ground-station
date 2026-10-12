@@ -1,0 +1,281 @@
+"""Synthetic tests for station-alerts.py. No live data, no network.
+
+    python3 -m unittest discover -s station-web/alerts/tests -v
+"""
+import importlib.util
+import json
+import os
+import shutil
+import tempfile
+import unittest
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+FIX = os.path.join(HERE, "fixtures")
+spec = importlib.util.spec_from_file_location("station_alerts", os.path.join(HERE, "..", "station-alerts.py"))
+sa = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(sa)
+
+T0 = 1_800_000_000.0
+
+
+class FakeDb:
+    """Stands in for the tar1090 db: hex -> (reg, type, military)."""
+    INFO = {
+        "ae0001": ("05-0001", "C17", True),
+        "a00003": ("N9FX", "B764", False),
+        "a00004": ("N500XX", "GLF6", False),
+    }
+    COUNTS = {"C17": 280, "B764": 18, "GLF6": 600, "B738": 7000}
+    NAMES = {"B764": "BOEING 767-400", "C17": "BOEING C-17 Globemaster 3"}
+
+    def maybe_refresh(self):
+        pass
+
+    def info(self, h):
+        return self.INFO.get(h, ("", "B738", False))
+
+    def worldwide(self, t):
+        return self.COUNTS.get(t, 0)
+
+    def type_name(self, t):
+        return self.NAMES.get(t, t)
+
+
+class Capture(sa.Notifier):
+    name = "capture"
+
+    def __init__(self):
+        super().__init__({})
+        self.sent = []
+
+    def send(self, alert):
+        self.sent.append(alert)
+
+
+def fx(name):
+    with open(os.path.join(FIX, name)) as f:
+        return json.load(f)
+
+
+class Base(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.state = os.path.join(self.tmp, "state")
+        self.out = os.path.join(self.tmp, "out")
+        self.cfg = sa.load_config(os.path.join(self.tmp, "missing.conf"))
+        self.home = sa.read_location(os.path.join(FIX, "fake-location.env"))
+        self.cap = Capture()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def engine(self, **kw):
+        return sa.Engine(self.cfg, db=FakeDb(), home=self.home, state_dir=self.state,
+                         out_dir=self.out, notifier=self.cap, now=T0, **kw)
+
+    def public(self):
+        with open(os.path.join(self.out, "alerts.json")) as f:
+            return f.read()
+
+    def private(self):
+        with open(os.path.join(self.state, "alerts.jsonl")) as f:
+            return [json.loads(x) for x in f]
+
+
+class TestEmergency(Base):
+    def test_7700_needs_two_polls_then_dedupes(self):
+        e = self.engine()
+        doc = fx("squawk7700.json")
+        out, _ = e.step(doc, T0)
+        self.assertEqual([a for a in out if a["kind"] == "emergency"], [])
+        out, _ = e.step(doc, T0 + 8)
+        em = [a for a in out if a["kind"] == "emergency"]
+        self.assertEqual(len(em), 1)
+        self.assertEqual(em[0]["hex"], "a1b2c3")
+        self.assertIn("7700", em[0]["title"])
+        self.assertIn("UAL123", em[0]["title"])
+        out, _ = e.step(doc, T0 + 16)
+        self.assertEqual([a for a in out if a["kind"] == "emergency"], [])
+        self.assertIn('"kind":"emergency"', self.public())
+        # after the de-dup window it can alert again
+        again = []
+        for dt in (20, 28):
+            out, _ = e.step(doc, T0 + 4 * 3600 + dt)
+            again += [a for a in out if a["kind"] == "emergency"]
+        self.assertEqual(len(again), 1)
+
+    def test_one_garbled_poll_does_not_alert(self):
+        e = self.engine()
+        e.step(fx("squawk7700.json"), T0)
+        e.step({"aircraft": []}, T0 + 8)
+        out, _ = e.step(fx("squawk7700.json"), T0 + 16)
+        self.assertEqual([a for a in out if a["kind"] == "emergency"], [])
+
+    def test_emergency_field_and_lifeguard_ignored(self):
+        e = self.engine()
+        e.step(fx("emergency_field.json"), T0)
+        out, _ = e.step(fx("emergency_field.json"), T0 + 8)
+        em = [a for a in out if a["kind"] == "emergency"]
+        self.assertEqual([a["hex"] for a in em], ["a1b2c4"])
+        self.assertIn("no radio", em[0]["title"])
+
+
+class TestMilitaryRareHigh(Base):
+    def test_military_db_flag_and_dbflags(self):
+        out, _ = self.engine().step(fx("military.json"), T0)
+        mil = sorted(a["hex"] for a in out if a["kind"] == "military")
+        self.assertEqual(mil, ["a77777", "ae0001"])
+
+    def test_rare_and_high(self):
+        out, _ = self.engine().step(fx("rare_high.json"), T0)
+        kinds = {(a["kind"], a["hex"]) for a in out}
+        self.assertIn(("rare", "a00003"), kinds)
+        self.assertIn(("high", "a00004"), kinds)
+        self.assertNotIn(("rare", "a00004"), kinds)  # 600 worldwide > 50
+        rare = [a for a in out if a["kind"] == "rare"][0]
+        self.assertEqual(rare["worldwide"], 18)
+
+    def test_rare_once_per_type(self):
+        FakeDb.INFO["a00099"] = ("N99FX", "B764", False)
+        doc = fx("rare_high.json")
+        doc["aircraft"].append(dict(hex="a00099", type="adsb_icao", seen=1, alt_baro=30000))
+        out, _ = self.engine().step(doc, T0)
+        del FakeDb.INFO["a00099"]
+        self.assertEqual(len([a for a in out if a["kind"] == "rare"]), 1)
+
+    def test_rare_threshold_configurable(self):
+        self.cfg["rare"]["max_worldwide"] = "10"
+        out, _ = self.engine().step(fx("rare_high.json"), T0)
+        self.assertFalse([a for a in out if a["kind"] == "rare"])
+
+
+class TestLowHomePrivate(Base):
+    def test_low_near_home_is_private_only(self):
+        out, _ = self.engine().step(fx("low_home.json"), T0)
+        low = [a for a in out if a["kind"] == "low_home"]
+        self.assertEqual([a["hex"] for a in low], ["a00010"])  # far + high ones skipped
+        self.assertTrue(low[0]["private"])
+        self.assertLess(low[0]["agl_ft"], 2000)
+        pub = self.public()
+        self.assertNotIn("low_home", pub)
+        self.assertNotIn("a00010", pub)
+        self.assertIn("low_home", [a["kind"] for a in self.private()])
+        self.assertIn("low_home", [a["kind"] for a in self.cap.sent])  # notifier still gets it
+
+    def test_no_home_no_low_alerts(self):
+        self.home = None
+        out, _ = self.engine().step(fx("low_home.json"), T0)
+        self.assertFalse([a for a in out if a["kind"] == "low_home"])
+
+    def test_public_file_has_no_positions(self):
+        e = self.engine()
+        for name in ("low_home.json", "military.json", "rare_high.json", "gps_good.json"):
+            e.step(fx(name), T0)
+        e.step(fx("gps_degraded.json"), T0 + 10)
+        pub = self.public()
+        doc = json.loads(pub)
+        for a in doc["alerts"]:
+            for k in ("lat", "lon", "dist_nm", "agl_ft", "gpsOkLat", "gpsOkLon", "private"):
+                self.assertNotIn(k, a)
+        for s in ("10.0", "20.0", "10.01", "20.01", "10.2", "20.2"):
+            self.assertNotIn(s, pub)
+
+
+class TestGps(Base):
+    def test_degraded_cluster_raises_one_regional_alert_then_clears(self):
+        e = self.engine()
+        e.step(fx("gps_good.json"), T0)
+        e.step(fx("gps_good.json"), T0 + 8)
+        out, st = e.step(fx("gps_degraded.json"), T0 + 16)
+        gps = [a for a in out if a["kind"] == "gps"]
+        self.assertEqual(len(gps), 1)
+        self.assertEqual(gps[0]["degraded"], 5)  # 4 low NACp/NIC + 1 gpsOkBefore; OLDGPS excluded
+        self.assertEqual(st["state"], "interference")
+        self.assertNotIn("lat", json.dumps(gps[0]))
+        out, _ = e.step(fx("gps_degraded.json"), T0 + 24)
+        self.assertFalse([a for a in out if a["kind"] == "gps"])
+        # recovers: window (300 s) plus clear_after (600 s)
+        t = T0 + 24
+        cleared = []
+        while t < T0 + 1300:
+            t += 30
+            out, st = e.step(fx("gps_good.json"), t)
+            cleared += [a for a in out if a["kind"] == "gps_clear"]
+        self.assertEqual(len(cleared), 1)
+        self.assertEqual(st["state"], "ok")
+        self.assertIn('"kind":"gps"', self.public())
+
+    def test_always_bad_aircraft_never_count(self):
+        e = self.engine()
+        doc = fx("gps_good.json")
+        for i in range(3):
+            _, st = e.step(doc, T0 + i * 8)
+        self.assertEqual(st["degraded"], 0)
+        self.assertEqual(st["state"], "ok")
+
+    def test_series_logged_per_minute(self):
+        e = self.engine()
+        for i in range(0, 200, 8):
+            e.step(fx("gps_good.json"), T0 + i)
+        with open(os.path.join(self.state, "gps-health.jsonl")) as f:
+            rows = [json.loads(x) for x in f]
+        self.assertGreaterEqual(len(rows), 3)
+        self.assertEqual(set(rows[0]), {"t", "n", "d"})
+
+
+class TestNotifier(Base):
+    def test_default_notifier_is_off(self):
+        n = sa.make_notifier(self.cfg)
+        self.assertEqual(n.name, "none")
+
+    def test_hourly_cap_holds_back_but_emergency_goes_through(self):
+        self.cfg["notify"]["max_per_hour"] = "2"
+        e = self.engine()
+        doc = {"aircraft": [dict(hex="ae%04x" % i, type="adsb_icao", seen=1, alt_baro=20000)
+                            for i in range(5)]}
+        FakeDb.INFO.update({"ae%04x" % i: ("", "C17", True) for i in range(5)})
+        out, _ = e.step(doc, T0)
+        self.assertEqual(len([a for a in out if a["kind"] == "military"]), 5)  # all logged
+        self.assertEqual(len(self.cap.sent), 2)                                # 2 notified
+        e.step(fx("squawk7700.json"), T0 + 8)
+        e.step(fx("squawk7700.json"), T0 + 16)
+        self.assertEqual(self.cap.sent[-1]["kind"], "emergency")  # exempt from the cap
+        self.assertIn("+3 more held back", self.cap.sent[-1]["detail"])  # carries the count
+        for i in range(5):
+            del FakeDb.INFO["ae%04x" % i]
+
+    def test_ntfy_message_shape(self):
+        sent = {}
+
+        class Resp:
+            def __enter__(s): return s
+            def __exit__(s, *a): pass
+            def read(s): return b"{}"
+
+        def fake_urlopen(req, timeout=0):
+            sent["url"], sent["body"], sent["auth"] = req.full_url, json.loads(req.data), req.get_header("Authorization")
+            return Resp()
+        import urllib.request
+        real, urllib.request.urlopen = urllib.request.urlopen, fake_urlopen
+        try:
+            n = sa.NtfyNotifier({"ntfy_url": "http://127.0.0.1:2586", "ntfy_topic": "gs-test",
+                                 "ntfy_token": "tk_x", "map_url": "https://example.test/map"})
+            n.send({"kind": "emergency", "hex": "a1b2c3", "title": "UAL123 squawk 7700", "detail": "x"})
+        finally:
+            urllib.request.urlopen = real
+        self.assertEqual(sent["url"], "http://127.0.0.1:2586/")
+        self.assertEqual(sent["body"]["topic"], "gs-test")
+        self.assertEqual(sent["body"]["priority"], 5)
+        self.assertEqual(sent["body"]["click"], "https://example.test/map/?icao=a1b2c3")
+        self.assertEqual(sent["auth"], "Bearer tk_x")
+
+    def test_state_survives_restart(self):
+        e = self.engine()
+        e.step(fx("military.json"), T0)
+        e2 = self.engine()
+        out, _ = e2.step(fx("military.json"), T0 + 60)
+        self.assertFalse([a for a in out if a["kind"] == "military"])
+
+
+if __name__ == "__main__":
+    unittest.main()

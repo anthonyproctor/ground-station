@@ -1,0 +1,31 @@
+{
+ "now": 1000,
+ "messages": 1,
+ "aircraft": [
+  {
+   "hex": "a1b2c4",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "N123AB  ",
+   "squawk": "1200",
+   "emergency": "nordo"
+  },
+  {
+   "hex": "a1b2c5",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "LIFE1   ",
+   "emergency": "lifeguard"
+  }
+ ]
+}

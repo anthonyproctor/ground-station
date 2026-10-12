@@ -1,0 +1,27 @@
+# ntfy server for the Ground Station alerts, LOCAL ONLY for now.
+# Installed to /etc/ntfy/server.yml by station-web/ntfy/setup-ntfy.sh.
+#
+# Listens on 127.0.0.1 only. Nothing outside the Pi can reach it yet: making
+# it reachable from the phone (a web-server proxy on the public site) and
+# turning on iOS instant push (upstream-base-url) are separate steps that
+# Anthony approves; see station-web/ntfy/README.md.
+
+listen-http: "127.0.0.1:2586"
+
+# Messages are kept 24 h so a phone can fetch them later.
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "24h"
+
+# Nobody reads or writes anything without an account.
+auth-file: "/var/lib/ntfy/user.db"
+auth-default-access: "deny-all"
+enable-signup: false
+enable-login: false
+enable-reservations: false
+
+# No web app, no attachments, no email.
+web-root: disable
+
+log-level: info
+log-level-overrides:
+  - "tag=publish -> debug"

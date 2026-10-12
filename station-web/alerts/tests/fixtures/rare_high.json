@@ -1,0 +1,28 @@
+{
+ "now": 1000,
+ "messages": 1,
+ "aircraft": [
+  {
+   "hex": "a00003",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "FDX9    "
+  },
+  {
+   "hex": "a00004",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 51000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "N500XX  "
+  }
+ ]
+}

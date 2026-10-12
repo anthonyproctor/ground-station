@@ -8,6 +8,7 @@ The public front end for the Pi 3 ADS-B station, served by lighttpd on port 8504
 | `/map/` | tar1090 live map. Old `/?...` links redirect to `/map/?...` |
 | `/graphs1090/` | graphs1090 with friendlier captions and a dark, mobile layout |
 | `/station-data/station.json` | Minute stats written by `station-stats.timer` |
+| `/station-data/alerts.json` | Public alerts + GPS health, written by `station-alerts.service` |
 
 Install or re-apply on the Pi:
 
@@ -33,3 +34,48 @@ The map is public, so the receiver location is never published:
 
 - Map: NEXRAD radar (Iowa State Mesonet WMS) is on by default. RainViewer radar and NOAA radar and satellite are in the layer switcher.
 - Home page: Denver International (KDEN) METAR from aviationweather.gov. Their API sends no CORS header, so the Pi fetches it at most once every 10 minutes and passes a small subset through `station.json`.
+
+## Alerts and GPS health (`alerts/`)
+
+`station-alerts.service` is a small Python service (stdlib only, nice 15, 20% CPU quota, 100 MB cap). Every 8 s it reads `aircraft.json` and raises:
+
+| Kind | Rule (all thresholds in `/etc/ground-station/alerts.conf`) | Public? |
+|---|---|---|
+| emergency | squawk 7500 / 7600 / 7700, or readsb `emergency` (not `lifeguard`), seen on 2 polls in a row | yes |
+| military | military bit in the tar1090 db flags (or readsb `dbFlags`) | yes |
+| rare | type with 25 or fewer airframes worldwide (the same type counts as "Rarest type"), once per type | yes |
+| high | above 50,000 ft | yes |
+| low_home | within 2 nmi of the station and under 2,000 ft above ground | **no, private log + phone only** |
+| gps | 3+ aircraft (and 25%+ of those checked) lose GPS integrity in 5 min | yes, "Denver area" only |
+
+One alert per aircraft per kind per 4 h. GPS: an aircraft counts as degraded when readsb reports `gpsOkBefore`, or when its NACp drops below 8 or NIC below 7 **after** it was seen good, so aircraft with permanently poor GPS can't fake an event.
+
+Files:
+- `/var/lib/ground-station/alerts.jsonl`: every alert, private (directory 0700, never served)
+- `/var/lib/ground-station/gps-health.jsonl`: one point a minute (aircraft checked, degraded) for graphs
+- `/run/station-web/alerts.json`: public subset for the home page. It's built from a field whitelist: no positions, distances, bearings or heights above ground.
+
+Install or update: `rsync -a station-web/ pi:/tmp/station-web/ && ssh pi 'sudo /tmp/station-web/alerts/install.sh'`. It keeps an existing `alerts.conf`.
+
+Tests use synthetic fixtures only: `python3 -m unittest discover -s station-web/alerts/tests -v`.
+
+Privacy checks:
+- `station-web/alerts/check-repo.sh`: run before every commit. Fails if `.env.local` isn't ignored, or if anything git would commit holds the station lat/lon, a token or password, or a private file.
+- `sudo station-web/alerts/check-served.sh` on the Pi: greps every served directory for the lat/lon from `location.env` and prints counts only.
+
+## Phone notifications (`ntfy/`)
+
+The ntfy server ([official apt repo](https://docs.ntfy.sh/install/), armhf) runs on the Pi, listening on `127.0.0.1:2586` only, with `auth-default-access: deny-all`, no sign-up and no web app. `sudo ntfy/setup-ntfy.sh` creates:
+- `anthony`: read-only on the alerts topic (the phone)
+- `station`: write-only on the alerts topic (the engine)
+- the topic, a random `gs-` name
+
+The passwords, tokens and topic go to `/etc/ground-station/ntfy-credentials.txt` (root, 600), and the engine's side goes to `/etc/ground-station/alerts.conf.d/ntfy.conf` (root, 600). Nothing secret is printed or committed.
+
+The engine sends emergency, military, rare, GPS and the private low-over-the-house alerts. `high` is off by default. Limits are one per aircraft per kind per 4 h, and at most 6 an hour overall. Emergencies skip the hourly cap, and the next sent message says how many were held back. The service can only open sockets to localhost.
+
+**Not done yet, needs Anthony's OK:**
+1. **Reaching the phone.** ntfy can't run on a sub-path, so the plan is a lighttpd proxy on `:8504` for only ntfy's paths: `/v1/` and `/gs-...` topics, sent to `127.0.0.1:2586`. The existing Funnel (`/` to `:8504`) already carries those paths, so no Funnel change is needed.
+2. **Instant iOS pushes.** This sets `base-url` to the station's public root and `upstream-base-url: "https://ntfy.sh"`. For each message, ntfy.sh then gets only a `poll_request` with the message id and a hashed topic. The message text stays on the Pi, and the iOS app fetches it from here. Without this, iOS delivery depends on background refresh and can be late.
+
+Phone steps: `ntfy/PHONE-SETUP.md`.

@@ -2,3 +2,11 @@
 __pycache__/
 *.wav
 *.cadu
+# private, never commit: station location, alert logs/state, real configs, ntfy secrets
+location.env
+*.jsonl
+alerts-state.json
+alerts.conf
+alerts.conf.d/
+ntfy-credentials*
+*.db

@@ -1,0 +1,40 @@
+{
+ "now": 1000,
+ "messages": 1,
+ "aircraft": [
+  {
+   "hex": "ae0001",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "RCH123  "
+  },
+  {
+   "hex": "a77777",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "dbFlags": 1,
+   "flight": "TEST1   "
+  },
+  {
+   "hex": "a00002",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "SWA2    "
+  }
+ ]
+}

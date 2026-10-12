@@ -1,0 +1,46 @@
+{
+ "now": 1000,
+ "messages": 1,
+ "aircraft": [
+  {
+   "hex": "a00010",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 6800,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "N10LOW  ",
+   "lat": 10.01,
+   "lon": 20.0,
+   "alt_geom": 6900
+  },
+  {
+   "hex": "a00011",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 6800,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "N11FAR  ",
+   "lat": 10.5,
+   "lon": 20.0
+  },
+  {
+   "hex": "a00012",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 12000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "N12HI   ",
+   "lat": 10.0,
+   "lon": 20.01
+  }
+ ]
+}

@@ -1,0 +1,105 @@
+{
+ "now": 1000,
+ "messages": 1,
+ "aircraft": [
+  {
+   "hex": "a10000",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "GOOD0   "
+  },
+  {
+   "hex": "a10001",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "GOOD1   "
+  },
+  {
+   "hex": "a10002",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "GOOD2   "
+  },
+  {
+   "hex": "a10003",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "GOOD3   "
+  },
+  {
+   "hex": "a10004",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "GOOD4   "
+  },
+  {
+   "hex": "a10005",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "GOOD5   "
+  },
+  {
+   "hex": "a10006",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "GOOD6   "
+  },
+  {
+   "hex": "a10007",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "GOOD7   "
+  },
+  {
+   "hex": "a2ffff",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 0,
+   "nic": 0,
+   "version": 2,
+   "flight": "OLDGPS  "
+  }
+ ]
+}

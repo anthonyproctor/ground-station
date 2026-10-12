@@ -1,0 +1,32 @@
+{
+ "now": 1000,
+ "messages": 1,
+ "aircraft": [
+  {
+   "hex": "a1b2c3",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "UAL123  ",
+   "squawk": "7700",
+   "emergency": "general"
+  },
+  {
+   "hex": "a00001",
+   "type": "adsb_icao",
+   "seen": 1,
+   "seen_pos": 1,
+   "alt_baro": 35000,
+   "nac_p": 10,
+   "nic": 8,
+   "version": 2,
+   "flight": "SWA1    ",
+   "squawk": "1200",
+   "emergency": "none"
+  }
+ ]
+}

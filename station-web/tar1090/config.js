@@ -524,7 +524,8 @@ routeDisplay = 'iata+city';
 })();
 
 // "Last alert" chip + pulsing ring on the alerted plane.
-// The chip reads the PUBLIC alerts file (no positions). Tapping it selects the
+// The ring marks whichever plane is selected (table click, map click, chip or
+// notification tap). The chip reads the PUBLIC alerts file (no positions). Tapping it selects the
 // plane and zooms in; a ring pulses around it while it is selected. The ring
 // also shows for notification taps (?icao=...). Nothing here knows or draws home.
 (function () {
@@ -547,7 +548,10 @@ routeDisplay = 'iata+city';
         s.textContent =
             '#gs-chip{position:fixed;left:50%;transform:translateX(-50%);top:calc(8px + env(safe-area-inset-top));z-index:10000;width:max-content;max-width:min(400px,calc(100vw - 480px));display:none;align-items:center;gap:8px;padding:8px 12px;border-radius:14px;background:rgba(11,15,20,.92);color:#e6edf3;border:1px solid #f5a623;box-shadow:0 2px 8px rgba(0,0,0,.4);font:600 13px/1.3 system-ui,-apple-system,sans-serif;cursor:pointer;text-align:left}' +
             '#gs-chip:hover{background:#1b2633}' +
-            '@media (max-width:600px){#gs-chip{left:8px;transform:none;top:calc(104px + env(safe-area-inset-top));max-width:calc(100vw - 16px)}}' +
+            '#gs-chip .gs-body{display:flex;align-items:center;gap:8px;min-width:0}' +
+            '#gs-x{flex:none;margin:-4px -6px -4px 2px;width:32px;height:32px;border-radius:50%;border:0;background:transparent;color:#9fb0c0;font:400 22px/1 system-ui,sans-serif;cursor:pointer}' +
+            '#gs-x:hover{background:#2b3846;color:#fff}' +
+            '@media (max-width:600px){#gs-chip{left:8px;transform:none;top:calc(104px + env(safe-area-inset-top));max-width:calc(100vw - 70px);padding:6px 8px 6px 10px;font-size:12px}#gs-chip small{display:none}}' +
             '#gs-chip b{color:#f5a623;font-weight:700;white-space:nowrap}' +
             '#gs-chip span{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}' +
             '#gs-chip small{display:block;font-weight:400;color:#9fb0c0;margin-top:2px}' +
@@ -571,25 +575,45 @@ routeDisplay = 'iata+city';
         return !!ok;
     }
 
+    var dismissed = null;                  // key of the alert he closed
+    try { dismissed = localStorage.getItem('gsDismissed'); } catch (e) {}
+
     function updateChip(alerts) {
         var a = null;
         for (var i = 0; i < (alerts || []).length; i++) {
             if (alerts[i].hex && KIND[alerts[i].kind]) { a = alerts[i]; break; }
         }
         if (!a || Date.now() / 1000 - a.t > 6 * 3600) { chip.style.display = 'none'; return; }
+        var key = a.hex + ':' + a.t;
+        if (key === dismissed) { chip.style.display = 'none'; return; }
         var title = a.title.replace(/^[A-Za-z ]+:\s*/, '');
-        chip.innerHTML = '<b></b><span></span>';
-        chip.firstChild.textContent = KIND[a.kind];
-        var sp = chip.lastChild;
-        sp.textContent = title;
+        chip.textContent = '';
+        var body = document.createElement('div');
+        body.className = 'gs-body';
+        body.tabIndex = 0;
+        body.setAttribute('role', 'button');
+        var b = document.createElement('b'); b.textContent = KIND[a.kind];
+        var sp = document.createElement('span'); sp.textContent = title;
         var sm = document.createElement('small');
-        sm.className = 'gs-when';
-        sm.textContent = ago(a.t) + ' · tap to find it';
+        sm.textContent = ago(a.t) + ' \u00b7 tap to find it';
         sp.appendChild(sm);
-        chip.onclick = function () {
-            var found = pick(a.hex);
-            if (!found) sm.textContent = 'Not in range right now';
+        body.appendChild(b); body.appendChild(sp);
+        var go = function () {
+            if (!pick(a.hex)) sm.textContent = 'Not in range right now';
         };
+        body.onclick = go;
+        body.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+        var x = document.createElement('button');
+        x.id = 'gs-x'; x.type = 'button';
+        x.setAttribute('aria-label', 'Dismiss alert');
+        x.textContent = '\u00d7';
+        x.onclick = function (e) {
+            e.stopPropagation();
+            dismissed = key;
+            try { localStorage.setItem('gsDismissed', key); } catch (err) {}
+            chip.style.display = 'none';
+        };
+        chip.appendChild(body); chip.appendChild(x);
         chip.style.display = 'flex';
     }
 
@@ -604,8 +628,7 @@ routeDisplay = 'iata+city';
         if (!ring) return;
         var p = null;
         try {
-            if (target && typeof SelectedPlane !== 'undefined' && SelectedPlane &&
-                SelectedPlane.icao === target && SelectedPlane.position) {
+            if (typeof SelectedPlane !== 'undefined' && SelectedPlane && SelectedPlane.position) {
                 p = OLMap.getPixelFromCoordinate(ol.proj.fromLonLat(SelectedPlane.position));
             }
         } catch (e) { p = null; }
@@ -619,9 +642,9 @@ routeDisplay = 'iata+city';
     function boot() {
         if (document.getElementById('gs-chip')) return;
         css();
-        chip = document.createElement('button');
+        chip = document.createElement('div');
         chip.id = 'gs-chip';
-        chip.type = 'button';
+        chip.setAttribute('role', 'group');
         document.body.appendChild(chip);
         target = urlHex;
         if (urlHex) {                       // notification tap: select it ourselves once it has loaded

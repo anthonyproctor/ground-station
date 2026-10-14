@@ -188,6 +188,24 @@ def nearest_place(lat, lon, radius_nm):
 
 # ---------------------------------------------------------------- helpers
 
+
+def place_phrase(lat, lon, radius_nm):
+    """'near Parker' when within 4 nmi of a town, else '12 mi E of Parker'
+    (direction is from the town to the AIRCRAFT). Empty if no town in range."""
+    best = None
+    for name, plat, plon in PLACES:
+        d = dist_nm(lat, lon, plat, plon)
+        if d <= radius_nm and (best is None or d < best[1]):
+            best = (name, d, plat, plon)
+    if not best:
+        return ""
+    name, d, plat, plon = best
+    if d <= 4:
+        return "near " + name
+    e, n = local_nm(plat, plon, lat, lon)
+    brg = math.degrees(math.atan2(e, n)) % 360
+    return "%d mi %s of %s" % (round(d * 1.15078), COMPASS[int((brg + 22.5) // 45) % 8], name)
+
 def load_json(path, default):
     try:
         with open(path) as f:
@@ -735,21 +753,24 @@ class Engine:
         return "lat" in a and "lon" in a and a.get("seen_pos", 999) <= self.fresh_s
 
     def _label(self, a, ident):
-        """'DAGGR44 · PILATUS PC-12 (07-0779) · 8,400 ft near Castle Rock'.
+        """'DAGGR44 · PILATUS PC-12 (07-0779) · heading NE · 8,400 ft near Castle Rock'.
         Place = nearest well-known town to the AIRCRAFT; nothing about home."""
         hexid, cs, reg, t, _ = ident
         tname = (self.db.type_name(t) if (self.db and t) else t) or "unknown type"
-        parts = [cs or reg or hexid.upper(), tname + ((" (%s)" % reg) if (cs and reg) else "")]
         alt = a.get("alt_baro")
+        parts = [cs or reg or hexid.upper(), tname + ((" (%s)" % reg) if (cs and reg) else "")]
+        trk, gs = a.get("track"), a.get("gs")
+        if alt != "ground" and isinstance(trk, (int, float)) and isinstance(gs, (int, float)) and gs > 30:
+            parts.append("heading " + COMPASS[int((trk % 360 + 22.5) // 45) % 8])
         where = ""
         if alt == "ground":
             where = "on the ground"
         elif isinstance(alt, (int, float)):
             where = "%s ft" % format(int(round(alt, -2)), ",")
         if self._fresh(a):
-            place = nearest_place(a["lat"], a["lon"], self.place_r)
+            place = place_phrase(a["lat"], a["lon"], self.place_r)
             if place:
-                where = (where + " near " + place).strip()
+                where = (where + " " + place).strip()
         else:
             where = (where + (", " if where else "") + "no position yet")
         if where:

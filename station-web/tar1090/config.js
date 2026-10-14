@@ -522,3 +522,125 @@ routeDisplay = 'iata+city';
     }
     if (document.body) addNav(); else document.addEventListener('DOMContentLoaded', addNav);
 })();
+
+// "Last alert" chip + pulsing ring on the alerted plane.
+// The chip reads the PUBLIC alerts file (no positions). Tapping it selects the
+// plane and zooms in; a ring pulses around it while it is selected. The ring
+// also shows for notification taps (?icao=...). Nothing here knows or draws home.
+(function () {
+    var target = null;                     // hex of the plane we are ringing
+    var urlHex = null;                     // read now: tar1090 strips the query string later
+    var ring = null, chip = null;
+    var KIND = { emergency: 'Emergency', military: 'Military', rare: 'Rare', high: 'Very high' };
+
+    function qIcao() {
+        try {
+            var m = /[?&]icao=([0-9a-fA-F~]+)/.exec(location.search);
+            return m ? m[1].toLowerCase() : null;
+        } catch (e) { return null; }
+    }
+
+    urlHex = qIcao();
+
+    function css() {
+        var s = document.createElement('style');
+        s.textContent =
+            '#gs-chip{position:fixed;left:50%;transform:translateX(-50%);top:calc(8px + env(safe-area-inset-top));z-index:10000;width:max-content;max-width:min(400px,calc(100vw - 480px));display:none;align-items:center;gap:8px;padding:8px 12px;border-radius:14px;background:rgba(11,15,20,.92);color:#e6edf3;border:1px solid #f5a623;box-shadow:0 2px 8px rgba(0,0,0,.4);font:600 13px/1.3 system-ui,-apple-system,sans-serif;cursor:pointer;text-align:left}' +
+            '#gs-chip:hover{background:#1b2633}' +
+            '@media (max-width:600px){#gs-chip{left:8px;transform:none;top:calc(104px + env(safe-area-inset-top));max-width:calc(100vw - 16px)}}' +
+            '#gs-chip b{color:#f5a623;font-weight:700;white-space:nowrap}' +
+            '#gs-chip span{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}' +
+            '#gs-chip small{display:block;font-weight:400;color:#9fb0c0;margin-top:2px}' +
+            '#gs-ring{position:absolute;left:0;top:0;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;border:3px solid #f5a623;box-shadow:0 0 12px #f5a623,inset 0 0 8px #f5a623;pointer-events:none;display:none;z-index:5;animation:gsPulse 1.4s ease-out infinite}' +
+            '@keyframes gsPulse{0%{transform:scale(.55);opacity:1}100%{transform:scale(1.25);opacity:.15}}' +
+            '@media (prefers-reduced-motion:reduce){#gs-ring{animation:none}}';
+        document.head.appendChild(s);
+    }
+
+    function ago(t) {
+        var m = Math.max(0, Math.round((Date.now() / 1000 - t) / 60));
+        return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago';
+    }
+
+    function pick(hex, note) {
+        target = hex;
+        var ok = typeof g !== 'undefined' && g.planes && g.planes[hex];
+        if (ok && typeof selectPlaneByHex === 'function') {
+            selectPlaneByHex(hex, { follow: true, zoom: 11 });
+        }
+        return !!ok;
+    }
+
+    function updateChip(alerts) {
+        var a = null;
+        for (var i = 0; i < (alerts || []).length; i++) {
+            if (alerts[i].hex && KIND[alerts[i].kind]) { a = alerts[i]; break; }
+        }
+        if (!a || Date.now() / 1000 - a.t > 6 * 3600) { chip.style.display = 'none'; return; }
+        var title = a.title.replace(/^[A-Za-z ]+:\s*/, '');
+        chip.innerHTML = '<b></b><span></span>';
+        chip.firstChild.textContent = KIND[a.kind];
+        var sp = chip.lastChild;
+        sp.textContent = title;
+        var sm = document.createElement('small');
+        sm.className = 'gs-when';
+        sm.textContent = ago(a.t) + ' · tap to find it';
+        sp.appendChild(sm);
+        chip.onclick = function () {
+            var found = pick(a.hex);
+            if (!found) sm.textContent = 'Not in range right now';
+        };
+        chip.style.display = 'flex';
+    }
+
+    function poll() {
+        fetch('/station-data/alerts.json', { cache: 'no-store' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) { updateChip(d.alerts); })
+            .catch(function () {});
+    }
+
+    function place() {
+        if (!ring) return;
+        var p = null;
+        try {
+            if (target && typeof SelectedPlane !== 'undefined' && SelectedPlane &&
+                SelectedPlane.icao === target && SelectedPlane.position) {
+                p = OLMap.getPixelFromCoordinate(ol.proj.fromLonLat(SelectedPlane.position));
+            }
+        } catch (e) { p = null; }
+        if (!p) { ring.style.display = 'none'; return; }
+        ring.style.display = 'block';
+        ring.style.transform = '';          // animation owns transform; position via left/top
+        ring.style.left = p[0] + 'px';
+        ring.style.top = p[1] + 'px';
+    }
+
+    function boot() {
+        if (document.getElementById('gs-chip')) return;
+        css();
+        chip = document.createElement('button');
+        chip.id = 'gs-chip';
+        chip.type = 'button';
+        document.body.appendChild(chip);
+        target = urlHex;
+        if (urlHex) {                       // notification tap: select it ourselves once it has loaded
+            var tries = 0, t = setInterval(function () {
+                if (++tries > 60) { clearInterval(t); return; }
+                if (pick(urlHex)) clearInterval(t);
+            }, 1000);
+        }
+        var wait = setInterval(function () {
+            if (typeof OLMap === 'undefined' || !OLMap || !OLMap.getViewport) return;
+            clearInterval(wait);
+            ring = document.createElement('div');
+            ring.id = 'gs-ring';
+            OLMap.getViewport().appendChild(ring);
+            OLMap.on('postrender', place);
+            setInterval(place, 500);
+        }, 400);
+        poll();
+        setInterval(poll, 30000);
+    }
+    if (document.body) boot(); else document.addEventListener('DOMContentLoaded', boot);
+})();

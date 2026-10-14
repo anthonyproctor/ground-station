@@ -179,6 +179,17 @@ class TestPlacesAndWaiting(Base):
         self.assertNotIn("home", self.public())
         self.assertIn("of home", m["home_rel"])  # phone-only field
 
+    def test_text_has_heading_and_distance_from_town(self):
+        out, _ = self.engine().step(fx("military_heading.json"), T0)
+        m = [a for a in out if a["kind"] == "military"][0]
+        self.assertIn("heading NE", m["title"])
+        self.assertRegex(m["title"], r"\d+ mi [NESW]+ of [A-Za-z ]+$")
+
+    def test_place_phrase(self):
+        self.assertEqual(sa.place_phrase(39.40, -104.85, 30), "near Castle Rock")
+        self.assertIn(" mi ", sa.place_phrase(39.62, -104.62, 30))
+        self.assertEqual(sa.place_phrase(10.0, 20.0, 30), "")
+
     def test_waits_for_position_then_sends(self):
         e = self.engine()
         out, _ = e.step(fx("military_nopos.json"), T0)

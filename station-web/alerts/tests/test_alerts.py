@@ -424,5 +424,46 @@ class TestLookup(Base):
         self.assertEqual(self.lookups(out), {})
 
 
+class TestSilent(Base):
+    def run3(self, name, n=3):
+        e = self.engine()
+        allout = []
+        for i in range(n):
+            out, _ = e.step(fx(name), T0 + i * 2)
+            allout += out
+        return [a for a in allout if a["kind"] == "silent"], e
+
+    def test_close_mode_s_only_is_logged_after_confirmation(self):
+        e = self.engine()
+        for i in range(2):
+            out, _ = e.step(fx("silent_close.json"), T0 + i * 2)
+            self.assertFalse([a for a in out if a["kind"] == "silent"])  # not yet
+        out, _ = e.step(fx("silent_close.json"), T0 + 4)
+        s = [a for a in out if a["kind"] == "silent"]
+        self.assertEqual(len(s), 1)
+        self.assertTrue(s[0]["private"])
+        self.assertIn("Loud and close", s[0]["title"])
+        self.assertEqual(s[0]["rssi"], -6.0)
+
+    def test_weak_high_positioned_or_adsb_do_not_trigger(self):
+        for name in ("silent_far.json", "silent_high.json", "silent_haspos.json", "silent_adsb.json"):
+            s, _ = self.run3(name)
+            self.assertFalse(s, name)
+
+    def test_never_public_and_never_notified_by_default(self):
+        s, e = self.run3("silent_close.json")
+        self.assertEqual(len(s), 1)
+        self.assertNotIn("Loud and close", self.public())
+        self.assertNotIn("silent", e.notify_kinds)
+
+    def test_deduped_for_the_window(self):
+        e = self.engine()
+        n = 0
+        for i in range(10):
+            out, _ = e.step(fx("silent_close.json"), T0 + i * 2)
+            n += len([a for a in out if a["kind"] == "silent"])
+        self.assertEqual(n, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

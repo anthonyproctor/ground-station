@@ -1,0 +1,13 @@
+{
+ "now": 1000,
+ "messages": 1,
+ "aircraft": [
+  {
+   "hex": "ab1234",
+   "type": "mode_s",
+   "seen": 1,
+   "rssi": -6.0,
+   "alt_baro": 3200
+  }
+ ]
+}

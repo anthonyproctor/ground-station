@@ -104,6 +104,21 @@ DEFAULTS = {
         "rare": "yes",
         "helicopters": "yes",
     },
+    # "loud and close, no position": a Mode S aircraft with a strong signal and no
+    # ADS-B position, e.g. a fighter whose transponder answers but never broadcasts
+    # where it is. PRIVATE. Logged only until "silent" is added to notify kinds.
+    "silent": {
+        "enabled": "yes",
+        # RSSI in dBFS, closer to 0 = stronger. Roughly -23 is typical at 30 miles.
+        "min_rssi": "-10",
+        # ignore anything known to be high up (airliners that just haven't sent a position)
+        "max_alt_ft": "15000",
+        # heard within this many seconds
+        "max_seen_s": "3",
+        # must qualify on this many polls in a row
+        "confirm_polls": "3",
+        "dedupe_hours": "1",
+    },
     "gps": {
         "enabled": "yes",
         "window_s": "300",
@@ -689,6 +704,15 @@ class Engine:
         self.lk_heli = cfg.getboolean("lookup", "helicopters")
         self.lk_sun_cache = (0, -90.0)
 
+        sl = cfg["silent"]
+        self.sl_on = cfg.getboolean("silent", "enabled")
+        self.sl_rssi = float(sl["min_rssi"])
+        self.sl_alt = float(sl["max_alt_ft"])
+        self.sl_seen = float(sl["max_seen_s"])
+        self.sl_polls = int(sl["confirm_polls"])
+        self.sl_window = float(sl["dedupe_hours"]) * 3600
+        self.sl_pending = {}
+
         self.wait_kinds = csv_set(e["wait_kinds"])
         self.wait_s = float(e["wait_for_position_s"])
         self.fresh_s = float(e["fresh_position_s"])
@@ -897,6 +921,8 @@ class Engine:
         if self.lookup_on and self._daylight(now):
             for a in ac:
                 self._lookup(out, now, a)
+        if self.sl_on:
+            self._silent(out, now, ac)
         self._release_held(out, now)
 
         for pk in [k for k in self.pending if k not in live_pending]:
@@ -920,6 +946,39 @@ class Engine:
             self._record(alert)
         self._write_public(now, gps_status, force=bool(out))
         return out, gps_status
+
+    def _silent(self, out, now, ac):
+        """PRIVATE: strong Mode S signal, no ADS-B position, not known to be high."""
+        live = set()
+        for a in ac:
+            if a.get("type") != "mode_s" or "lat" in a:
+                continue
+            rssi = a.get("rssi")
+            if not isinstance(rssi, (int, float)) or rssi < self.sl_rssi:
+                continue
+            if a.get("seen", 999) > self.sl_seen:
+                continue
+            alt = self._alt(a)
+            if alt is not None and alt > self.sl_alt:
+                continue
+            live.add(a["hex"])
+            self.sl_pending[a["hex"]] = self.sl_pending.get(a["hex"], 0) + 1
+            if self.sl_pending[a["hex"]] < self.sl_polls:
+                continue
+            ident = self._ident(a)
+            hexid, cs, reg, t, mil = ident
+            tname = (self.db.type_name(t) if (self.db and t) else t) or ""
+            who = ", ".join(x for x in (cs or reg or hexid.upper(), tname) if x)
+            if mil:
+                who += " (military flag)"
+            where = ("%s ft" % format(int(round(alt, -2)), ",")) if alt is not None else "altitude unknown"
+            self._emit(out, now, "silent", a, ident,
+                       "Loud and close, no position: %s" % who,
+                       "signal %.1f dBFS (about -23 is typical at 30 miles), %s" % (rssi, where),
+                       private=True, window=self.sl_window,
+                       extra={"rssi": round(rssi, 1), "mode_s_only": True})
+        for h in [h for h in self.sl_pending if h not in live]:
+            del self.sl_pending[h]
 
     def _daylight(self, now):
         t, el = self.lk_sun_cache
